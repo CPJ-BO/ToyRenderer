@@ -1,0 +1,87 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+
+layout(set = 1, binding = 0) buffer clusterInfos { 
+
+	DrawClusterDatas data;
+
+} CLUSTER_INFOS[];
+
+layout(set = 1, binding = 1) buffer clusterGroupInfos { 
+
+	DrawClusterGroupDatas data;
+
+} CLUSTER_GROUP_INFO;
+
+layout(push_constant) uniform computeSetting {
+
+    float lod_error_offset;
+	float lod_error_rate;
+	float _padding[2];
+
+}COMPUTE_SETTING;
+
+bool checkLOD(BoundingSphere sphere, float error)
+{
+	float dist = max(length(sphere.center_radius.xyz) - sphere.center_radius.w, 0.0f);
+
+    return COMPUTE_SETTING.lod_error_rate * dist + COMPUTE_SETTING.lod_error_offset >= error;
+}
+
+// bool checkLOD(BoundingSphere sphere, float error)
+// {
+//     return 0.0 >= error;
+// }
+
+#define GROUP_SIZE 256
+#define THREADS_X 256
+#define THREADS_Y 1
+#define THREADS_Z 1
+
+layout (local_size_x = THREADS_X, local_size_y = THREADS_Y, local_size_z = THREADS_Z) in;
+void main() 
+{
+	uint gID = gl_GlobalInvocationID.x;
+
+	if(gID < CLUSTER_GROUP_INFO.data.setting.processSize)
+	{
+		ClusterGroupIndex groupIndex = CLUSTER_GROUP_INFO.data.indices[gID];
+
+		ClusterGroupInfo group = CLUSTER_GROUPS.slot[groupIndex.clusterGroupID];
+		Object object = OBJECTS.slot[groupIndex.instanceIndex];
+
+		//BoundingSphere view_group_sphere = SphereTransform(group.sphere, CAMERA.view * object.model);	
+		BoundingSphere view_object_sphere = SphereTransform(object.sphere, CAMERA.view * object.model);		//统一使用instance的包围盒做距离测试，保证计算的误差一致
+
+		if(!checkLOD(view_object_sphere, group.parent_lod_error))	//父节点error应该大于阈值
+		{
+			for(uint i = 0; i < group.clusterSize; i++)
+			{
+				ClusterInfo cluster = CLUSTERS.slot[group.clusterID[i]];
+
+				//BoundingSphere view_cluster_sphere = SphereTransform(cluster.sphere, CAMERA.view * object.model);	
+				if(checkLOD(view_object_sphere, cluster.lod_error))	//cluster本身error小于阈值
+				{
+					ClusterIndex clusterIndex;											//把cluster的信息填进缓冲里，在cluster_mesh.comp里进一步做剔除
+					clusterIndex.instanceIndex = groupIndex.instanceIndex;
+					clusterIndex.clusterID = group.clusterID[i];
+
+					for(int j = 0; j < INDIRECT_BUFFER_MAX; j++)	
+					{
+						if(j == INDIRECT_BUFFER_FORWARD) continue;	//cluster暂不支持前向，跳过了
+
+						uint offset = atomicAdd(CLUSTER_INFOS[j].data.setting.processSize, 1);	
+						CLUSTER_INFOS[j].data.indices[offset] = clusterIndex;
+					}
+					atomicAdd(CLUSTER_GROUP_INFO.data.setting.drawSize, 1);					
+				}
+			}
+		}
+	}
+}
+
+
+

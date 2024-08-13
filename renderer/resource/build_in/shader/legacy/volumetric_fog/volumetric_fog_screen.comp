@@ -1,0 +1,66 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+#include "common_volumetric_fog.glsl"
+
+
+layout(set = 1, binding = 0, rgba16f) uniform image3D VOLUMETRIC_FOG_RAW;				//未计算积分时的体素纹理
+layout(set = 1, binding = 1, rgba16f) uniform image3D VOLUMETRIC_FOG_RAW_HISTORY;		//未计算积分时的历史帧
+layout(set = 1, binding = 2, rgba16f) uniform image3D VOLUMETRIC_FOG_INTEGRAL;			//积分体素纹理
+layout(set = 1, binding = 3, rgba16f) uniform image2D VOLUMETRIC_FOG_IMG;				//最终画面的平铺2D纹理
+
+layout(push_constant) uniform volumetricFogSetting {
+	bool  isotropic;
+	float henyey_greenstein_G;
+	float attenuation_factor;	// 衰减系数 = 外散射系数 + 吸收率
+	float scattering_intencity;
+	float blend_factor;
+	float indirect_light_intencity;
+} VolumetricFogSetting;
+
+#define THREADS_X 32	
+#define THREADS_Y 32	
+#define THREADS_Z 1	
+
+layout (local_size_x = THREADS_X, local_size_y = THREADS_Y, local_size_z = THREADS_Z) in;
+void main() 
+{
+	// 第三轮 计算屏幕空间效果
+	ivec2 gID = ivec2(gl_GlobalInvocationID.xy);
+	if(gID.x >= WINDOW_WIDTH || gID.y >= WINDOW_HEIGHT ) return;
+
+	vec2 inUV = gID.xy / vec2(WINDOW_WIDTH, WINDOW_HEIGHT);
+	
+	// 本帧抖动////////////////////////////////////////////////////////////////////////////////////
+	vec2 noise              = fetchNoise2D(gID);
+    float totalTickTime 	= fract(GLOBAL_SETTING.totalTickTime / 2);
+    vec2 ditter 			= vec2(	random(vec2(noise.x + totalTickTime + gID.x)), random(vec2(noise.y + totalTickTime + gID.y)));  
+    ditter 					= smoothstep(0.0f, 1.0f, ditter);	
+    ditter 					= (ditter - 0.5) / vec2(VOLUMETRIC_FOG_SIZE_X, VOLUMETRIC_FOG_SIZE_Y); 
+
+	// 坐标////////////////////////////////////////////////////////////////////////////////////
+
+	vec4 worldPos = depthToWorld(inUV); //本帧的世界空间坐标，根据深度获取
+
+	//随机抖动一下，如果深度差距不大就可以直接用邻近的，差距太大的话抖动会导致边缘噪声很大  	
+	if(abs(	LinearEyeDepth(fetchDepth(inUV), 			CAMERA.near_far.x, CAMERA.near_far.y) - 
+			LinearEyeDepth(fetchDepth(inUV + ditter), 	CAMERA.near_far.x, CAMERA.near_far.y)) < 1.0)	 worldPos = depthToWorld(inUV + ditter);      
+			 	
+
+    vec4 viewPos     		= worldToView(worldPos);      
+    vec4 ndcPos      		= viewToNdc(viewPos);
+	ndcPos.xy 				= min(ndcPos.xy, 0.99);	//边缘有点小问题
+                                   
+    ivec3 clusterID 	= fetchVolumetricClusterID(ndcPos.xyz);
+	clusterID = ivec3(clusterID.xy, max(clusterID.z, 0));
+
+    vec4 data           = imageLoad(VOLUMETRIC_FOG_INTEGRAL, clusterID);
+
+	imageStore(VOLUMETRIC_FOG_IMG, ivec2(gID.xy), data );
+
+}
+
+
+

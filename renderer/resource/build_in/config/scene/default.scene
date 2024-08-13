@@ -1,0 +1,121 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Scene",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "filePath": "resource/build_in/config/scene/default.scene"
+                },
+                "name": "defaultScene",
+                "entities": [
+                    {
+                        "ptr_wrapper": {
+                            "id": 2147483650,
+                            "data": {
+                                "name": "Entity1",
+                                "components": [
+                                    {
+                                        "polymorphic_id": 2147483650,
+                                        "polymorphic_name": "TransformComponent",
+                                        "ptr_wrapper": {
+                                            "id": 2147483651,
+                                            "data": {
+                                                "Component": {},
+                                                "transform": {
+                                                    "position": {
+                                                        "x": -0.12121221423149109,
+                                                        "y": 0.7334839105606079,
+                                                        "z": 0.8162288665771484
+                                                    },
+                                                    "scale": {
+                                                        "x": 1.0,
+                                                        "y": 1.0,
+                                                        "z": 1.0
+                                                    },
+                                                    "rotation": {
+                                                        "x": -0.0342228040099144,
+                                                        "y": 0.6592594981193543,
+                                                        "z": -0.03893977031111717,
+                                                        "w": 0.7501262426376343
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "polymorphic_id": 2147483651,
+                                        "polymorphic_name": "CameraComponent",
+                                        "ptr_wrapper": {
+                                            "id": 2147483652,
+                                            "data": {
+                                                "Component": {},
+                                                "yaw": 0.0,
+                                                "pitch": 0.0,
+                                                "fovy": 90.0,
+                                                "aspect": 1.7777777910232545,
+                                                "near": 0.10000000149011612,
+                                                "far": 200.0
+                                            }
+                                        }
+                                    }
+                                ],
+                                "children": []
+                            }
+                        }
+                    },
+                    {
+                        "ptr_wrapper": {
+                            "id": 2147483653,
+                            "data": {
+                                "name": "Entity2",
+                                "components": [
+                                    {
+                                        "polymorphic_id": 2,
+                                        "ptr_wrapper": {
+                                            "id": 2147483654,
+                                            "data": {
+                                                "Component": {},
+                                                "transform": {
+                                                    "position": {
+                                                        "x": 0.0,
+                                                        "y": 0.0,
+                                                        "z": 0.0
+                                                    },
+                                                    "scale": {
+                                                        "x": 1.0,
+                                                        "y": 1.0,
+                                                        "z": 1.0
+                                                    },
+                                                    "rotation": {
+                                                        "x": 0.0,
+                                                        "y": 0.0,
+                                                        "z": 0.0,
+                                                        "w": 1.0
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ],
+                                "children": [
+                                    {
+                                        "ptr_wrapper": {
+                                            "id": 2
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "idAlloctor": {
+                    "maxIndex": 4294967295,
+                    "nextIndex": 3,
+                    "unusedIndex": []
+                }
+            }
+        }
+    }
+}

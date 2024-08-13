@@ -1,0 +1,405 @@
+#version 460
+
+#define GROUP_SIZE 8
+#define BVH_STACK_SIZE 32
+
+struct BvhNode
+{
+    vec3 min_bound;
+    uint child_index;
+    vec3 max_bound;
+    uint child_count;
+};
+
+struct Vertex
+{
+    vec4 pos;
+    vec4 normal;
+};
+
+layout(set = 0, binding = 0) buffer bvhBuffer
+{
+   BvhNode nodes[];
+} BvhBuffer;
+
+layout(set = 0, binding = 1) buffer vertexBuffer
+{
+   Vertex vertices[];
+} VertexBuffer;
+
+layout(set = 0, binding = 2, r32f) uniform image3D SdfImage;
+
+layout(push_constant) uniform params {
+    int TriangleCount;
+	int SignRayCount;
+	int SdfTexSize;
+	int dummy;
+	vec4 SDFLower;
+	vec4 SDFUpper;
+	vec4 SDFExtent;
+} Params;
+
+float lerp(float a, float b, float c)
+{
+    return (1 - c) * a + c * b;
+}
+
+float dot2(vec3 v)
+{
+    return dot(v, v);
+}
+
+bool isLeaf(BvhNode node)
+{
+    return node.child_count != 0;
+}
+
+bool intersectSphereBox(vec3 lower, vec3 upper, vec3 p, float radius2)
+{
+    vec3 q = clamp(p, lower, upper);
+    return dot(p - q, p - q) <= radius2;
+}
+
+//可参照 https://iquilezles.org/www/articles/distfunctions/distfunctions.htm具体实现
+float udf2Triangle(vec3 a, vec3 b, vec3 c, vec3 p)
+{
+    vec3 ba = b - a;
+    vec3 pa = p - a;
+    vec3 cb = c - b;
+    vec3 pb = p - b;
+    vec3 ac = a - c;
+    vec3 pc = p - c;
+    vec3 nor = cross(ba, ac);
+
+    if (sign(dot(cross(ba, nor), pa)) +
+       sign(dot(cross(cb, nor), pb)) +
+       sign(dot(cross(ac, nor), pc)) < 2)
+    {
+        return min(min(
+            dot2(ba * clamp(dot(ba, pa) / dot2(ba), 0.0f, 1.0f) - pa),
+            dot2(cb * clamp(dot(cb, pb) / dot2(cb), 0.0f, 1.0f) - pb)),
+            dot2(ac * clamp(dot(ac, pc) / dot2(ac), 0.0f, 1.0f) - pc));
+    }
+
+    return dot(nor, pa) * dot(nor, pa) / dot2(nor);
+}
+
+bool intersectSphereTriangle(vec3 a, vec3 b, vec3 c, vec3 o, float r2)
+{
+    return udf2Triangle(a, b, c, o) <= r2;
+}
+
+bool closestIntersectionWithTriangle(
+    vec3 o,
+    vec3 d,
+    float maxT,
+    vec3 A,
+    vec3 B_A,
+    vec3 C_A,
+    out float r_t)
+{
+    vec3 s1 = cross(d, C_A);
+    float div = dot(s1, B_A);
+    float invDiv = 1 / div;
+
+    vec3 o_A = o - A;
+    float alpha = dot(o_A, s1) * invDiv;
+
+    vec3 s2 = cross(o_A, B_A);
+    float beta = dot(d, s2) * invDiv;
+    
+    const float t = dot(C_A, s2) * invDiv;
+    if (t < 0 || t > maxT || alpha < 0 || beta < 0 || alpha + beta > 1)
+        return false;
+
+    r_t = t;
+    return true;
+}
+
+float max4(float x, float y, float z, float w)
+{
+    return max(max(x, y), max(z, w));
+}
+
+float min4(float x, float y, float z, float w)
+{
+    return min(min(x, y), min(z, w));
+}
+
+bool intersectRayBox(
+    vec3 o, vec3 invD, float t0, float t1, vec3 lower, vec3 upper)
+{
+    vec3 n = invD * (lower - o);
+    vec3 f = invD * (upper - o);
+
+    vec3 minnf = min(n, f);
+    vec3 maxnf = max(n, f);
+
+    t0 = max4(t0, minnf.x, minnf.y, minnf.z);
+    t1 = min4(t1, maxnf.x, maxnf.y, maxnf.z);
+
+    return t0 <= t1;
+}
+
+bool containsTriangle(vec3 o, float radius2, uint nodeIndex)
+{
+    uint stack[BVH_STACK_SIZE];
+    stack[0] = nodeIndex;
+    int stackTop = 1;
+
+    while (stackTop >= 1)    
+    {
+        uint ni = stack[--stackTop];
+        BvhNode node = BvhBuffer.nodes[ni];
+
+        if (!intersectSphereBox(
+            node.min_bound,
+            node.max_bound,
+            o, radius2))
+            continue;
+
+        if (isLeaf(node))
+        {
+            for (uint i = 0, j = 3 * node.child_index;
+                i < node.child_count; ++i, j += 3)
+            {
+                if (intersectSphereTriangle(
+                    VertexBuffer.vertices[j].pos.xyz, VertexBuffer.vertices[j + 1].pos.xyz, VertexBuffer.vertices[j + 2].pos.xyz, o, radius2))
+                    return true;
+            }
+            return false;
+        }
+
+        stack[stackTop++] = node.child_index;
+        stack[stackTop++] = node.child_index + 1;
+    }
+
+    return false;
+}
+
+float estimateUpperBound(vec3 p, int precison)
+{
+    BvhNode root = BvhBuffer.nodes[0];
+    vec3 lower = root.min_bound;
+    vec3 upper = root.max_bound;
+
+    float L = 0;
+    float R = distance(0.5 * (lower + upper), p) + distance(lower, upper);
+
+    for (int i = 0; i < precison; ++i)
+    {
+        float mid = 0.5 * (L + R);
+        if (containsTriangle(p, mid * mid, 0))
+            R = mid;
+        else
+            L = mid;
+    }
+
+    return R;
+}
+
+int traceTriangleIndex(vec3 o, vec3 d, float maxT)
+{
+    vec3 invD = 1.0f / d;
+
+    uint stack[BVH_STACK_SIZE];
+    stack[0] = 0;
+    int stackTop = 1;
+
+    int finalIdx = -1;
+    float finalT = maxT;
+
+    while (stackTop >= 1)
+    {
+        uint ni = stack[--stackTop];
+        BvhNode node = BvhBuffer.nodes[ni];
+
+        if (!intersectRayBox(
+            o, invD, 0, finalT,
+            node.min_bound,
+            node.max_bound))
+            continue;
+
+        if (isLeaf(node))
+        {
+            for (uint i = 0, j = 3 * node.child_index;
+                i < node.child_count; ++i, j += 3)
+            {
+                vec3 a = VertexBuffer.vertices[j].pos.xyz;
+                vec3 b = VertexBuffer.vertices[j + 1].pos.xyz;
+                vec3 c = VertexBuffer.vertices[j + 2].pos.xyz;
+
+                float newT;
+                if (closestIntersectionWithTriangle(
+                    o, d, finalT, a, b - a, c - a, newT))
+                {
+                    finalT = newT;
+                    finalIdx = int(i + node.child_index);
+                }
+            }
+        }
+        else
+        {
+            stack[stackTop++] = node.child_index;
+            stack[stackTop++] = node.child_index + 1;
+        }
+    }
+
+    return finalIdx;
+}
+
+struct UDF2Result
+{
+    uint triIdx;
+    float udf2;
+};
+
+int estimateSign(vec3 o, float rn)
+{
+    int rndTriIdx = int(rn * (Params.TriangleCount - 1));
+
+    vec3 a = VertexBuffer.vertices[rndTriIdx * 3 + 0].pos.xyz;
+    vec3 b = VertexBuffer.vertices[rndTriIdx * 3 + 1].pos.xyz;
+    vec3 c = VertexBuffer.vertices[rndTriIdx * 3 + 2].pos.xyz;
+
+    vec3 d = 1.0f / 3 * (a + b + c) - o;
+
+    int triIdx = traceTriangleIndex(o, d, 1.0f / 0.0f);
+    if (triIdx < 0)
+        return 0;
+
+    vec3 na = VertexBuffer.vertices[triIdx * 3 + 0].normal.xyz;
+    vec3 nb = VertexBuffer.vertices[triIdx * 3 + 1].normal.xyz;
+    vec3 nc = VertexBuffer.vertices[triIdx * 3 + 2].normal.xyz;
+
+    return dot(d, na + nb + nc) < 0 ? 1 : -1;
+}
+
+UDF2Result udf2(vec3 p, float u2, uint nodeIndex)
+{
+    uint stack[BVH_STACK_SIZE];
+    stack[0] = nodeIndex;
+    int stackTop = 1;
+
+    uint finalTriIdx = -1;
+
+    while (stackTop >= 1)   //用栈模拟递归
+    {
+        uint ni = stack[--stackTop];
+        BvhNode node = BvhBuffer.nodes[ni];
+
+        if (!intersectSphereBox(    //逐级检测BVH相交
+            node.min_bound,
+            node.max_bound,
+            p, u2))
+            continue;
+
+        if (isLeaf(node))   //叶节点
+        {
+            for (uint i = 0, j = 3 * node.child_index;
+                i < node.child_count; ++i, j += 3)
+            {
+                float newUDF2 = udf2Triangle(   //为每一个叶节点三角面，更新最小无符号距离
+                    VertexBuffer.vertices[j].pos.xyz, VertexBuffer.vertices[j + 1].pos.xyz, VertexBuffer.vertices[j + 2].pos.xyz, p);
+
+                if (newUDF2 < u2)
+                {
+                    u2 = newUDF2;
+                    finalTriIdx = i + node.child_index;
+                }
+            }
+        }
+        else
+        {
+            stack[stackTop++] = node.child_index;
+            stack[stackTop++] = node.child_index + 1;
+        }
+    }
+
+    //栈空，返回最小无符号距离平方和相应的三角面索引
+    UDF2Result result;
+    result.triIdx = finalTriIdx;
+    result.udf2 = u2;
+
+    return result;
+}
+
+float sdf(vec3 p, float upperBound) //根据先前的计算结果，可以估计新的采样点（邻近）的最大无符号距离
+{
+    if (upperBound <= 0)
+        upperBound = estimateUpperBound(p, 6);  //没有估计距离，初始化一个
+
+    UDF2Result udf2Result = udf2(p, upperBound * upperBound, 0);    //计算无符号距离
+
+    float udfVal = sqrt(udf2Result.udf2);
+    uint triIdx = udf2Result.triIdx;
+
+    //估计符号？直接计算不好吗？    TODO
+
+    // int signEstimator = 0;
+    // for (int i = 0; i < Params.SignRayCount; ++i)
+    // {
+    //     signEstimator += estimateSign(
+    //         p, lerp(0.0f, 1.0f, (i + 0.5f) / Params.SignRayCount));
+    // }
+    
+    // if (signEstimator > 0)
+    //     return udfVal;
+    // if (signEstimator < 0)
+    //     return -udfVal;
+
+    vec3 a = VertexBuffer.vertices[triIdx * 3 + 0].pos.xyz;
+    vec3 b = VertexBuffer.vertices[triIdx * 3 + 1].pos.xyz;
+    vec3 c = VertexBuffer.vertices[triIdx * 3 + 2].pos.xyz;
+    
+    vec3 na = VertexBuffer.vertices[triIdx * 3 + 0].normal.xyz;
+    vec3 nb = VertexBuffer.vertices[triIdx * 3 + 1].normal.xyz;
+    vec3 nc = VertexBuffer.vertices[triIdx * 3 + 2].normal.xyz;
+
+    int ja = dot(p - a, na) >= 0 ? 1 : -1;
+    int jb = dot(p - b, nb) >= 0 ? 1 : -1;
+    int jc = dot(p - c, nc) >= 0 ? 1 : -1;
+
+    return ja + jb + jc > 0 ? udfVal : -udfVal;
+}
+
+
+
+
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+    int width = Params.SdfTexSize;
+    int height = Params.SdfTexSize; 
+    int depth = Params.SdfTexSize;
+    
+
+    if (gl_GlobalInvocationID.x >= width || gl_GlobalInvocationID.y >= height)
+        return;
+
+    float dz = 1.05f * Params.SDFExtent.z / depth;
+
+    float xf = lerp(Params.SDFLower.x, Params.SDFUpper.x, (gl_GlobalInvocationID.x + 0.5f) / width);
+    float yf = lerp(Params.SDFLower.y, Params.SDFUpper.y, (gl_GlobalInvocationID.y + 0.5f) / height);
+
+    float lastUDF = -100 * dz;
+
+    for (int z = 0; z < GROUP_SIZE; z++)
+    {
+        float zf = lerp(Params.SDFLower.z, Params.SDFUpper.z, ((gl_GlobalInvocationID.z * GROUP_SIZE + z) + 0.5f) / depth);
+        float upperBound = lastUDF + dz;    //在z上遍历循环，可以估计邻近的范围
+
+        float newSDF = sdf(vec3(xf, yf, zf), upperBound);
+        lastUDF = abs(newSDF);
+
+        vec4 outData;
+        //outData = vec4(vec3(newSDF), 1.0f);       //有符号
+        outData = vec4(vec3(lastUDF), 1.0f);        //无符号
+
+        imageStore(SdfImage, ivec3(gl_GlobalInvocationID.x, height - gl_GlobalInvocationID.y, z), outData); //颠倒了
+    }
+
+    //imageStore(SdfImage, ivec2(gl_GlobalInvocationID.xy), vec4(1.0f));
+}
+

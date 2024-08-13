@@ -1,0 +1,93 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+
+layout(set = 1, binding = 0) buffer batchInfos { 
+
+	IndirectSetting setting;
+    BatchInfo infos[];
+
+} BATCH_INFOS[];
+
+layout(set = 1, binding = 1) buffer indirectCommands { 
+
+    IndexedIndirectCommand commands[];
+
+} INDIRECT_COMMANDS[];
+
+
+
+
+#define GROUP_SIZE 256
+#define THREADS_X 256
+#define THREADS_Y 1
+#define THREADS_Z 1
+
+layout (local_size_x = THREADS_X, local_size_y = THREADS_Y, local_size_z = THREADS_Z) in;
+void main() 
+{
+	uint gID = gl_GlobalInvocationID.x;
+
+	for(int i = 0; i < INDIRECT_BUFFER_MAX; i++)
+	{
+		if(gID < BATCH_INFOS[i].setting.processSize)
+		{
+			BatchInfo batch = BATCH_INFOS[i].infos[gID];
+			Object object = OBJECTS.slot[batch.instanceIndex];
+			
+			BoundingSphere world_sphere = SphereTransform(object.sphere, object.model);	//世界空间的包围球包围盒
+			BoundingBox world_box = BoundingBoxTransform(object.box, object.model);
+
+			bool visible = true;			//整体可见性
+			bool frustum_visible = true;	//视锥剔除可见性
+			bool occlusion_visible = true;	//遮蔽剔除可见性
+
+			//屏幕空间绘制
+			if(	i == INDIRECT_BUFFER_PRE_PASS || 	
+				i == INDIRECT_BUFFER_FORWARD ||
+				i == INDIRECT_BUFFER_DEFERRED)
+			{
+				//frustum_visible = frustum_visible && FrustumIntersectSphere(CAMERA.frustum, world_sphere);
+				frustum_visible = frustum_visible && FrustumIntersectBox(CAMERA.frustum, world_box);
+
+				occlusion_visible = occlusion_visible && OcclusionCull( 			//遮蔽剔除使用前一帧的深度缓冲Hiz
+					world_sphere, 
+					CAMERA.pos.xyz, CAMERA.view, CAMERA.proj, CAMERA.near_far[0],
+					DEPTH_PYRAMID_SAMPLER_MAX); 
+			}
+
+			//光源空间绘制，平行光
+			if(	i >= INDIRECT_BUFFER_DIRECTIONAL_SHADOW &&	
+			  	i < INDIRECT_BUFFER_POINT_SHADOW)
+			{			
+				//frustum_visible = frustum_visible && FrustumIntersectBox(LIGHT.directionalLights[i - INDIRECT_BUFFER_DIRECTIONAL_SHADOW].frustum, world_box);
+				frustum_visible = frustum_visible && BoxIntersectSphere(world_box, LIGHT.directionalLights[i - INDIRECT_BUFFER_DIRECTIONAL_SHADOW].sphere);
+			}
+
+			//光源空间绘制，点光源
+			if(	i >= INDIRECT_BUFFER_POINT_SHADOW &&	
+			  	i < INDIRECT_BUFFER_FORWARD)
+			{
+				if(i - INDIRECT_BUFFER_POINT_SHADOW > LIGHT.lightSetting.pointshadowed_light_cnt - 1)	visible = false;	//没启用的点光源槽位
+				else frustum_visible = frustum_visible && BoxIntersectSphere(world_box, LIGHT.pointLights[LIGHT.lightSetting.shadow_light_offsets[i - INDIRECT_BUFFER_POINT_SHADOW]].sphere);
+			}
+
+
+
+			//TODO INDIRECT_COMMANDS可以放到这里来录制，不只是instanceCount
+
+			visible = visible && occlusion_visible && frustum_visible;
+
+			atomicAdd(BATCH_INFOS[i].setting.drawSize, visible ? 1 : 0);						//存一下剔除的数量信息
+			atomicAdd(BATCH_INFOS[i].setting.frustumCull, frustum_visible ? 0 : 1);
+			atomicAdd(BATCH_INFOS[i].setting.occlusionCull, occlusion_visible ? 0 : 1);
+
+			INDIRECT_COMMANDS[i].commands[batch.batchIndex].instanceCount = visible ? 1 : 0;	//更新command
+		}
+	}
+}
+
+
+

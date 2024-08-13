@@ -1,0 +1,107 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+
+layout(push_constant) uniform sSSRSetting {
+    int max_mip;
+    int start_mip;
+    int end_mip;
+	float thickness;
+    int max_loop;
+    float scale;
+    float max_roughness;
+    float importance_sample_bias;
+    float min_hit_distance;
+
+    bool enable_skybox;
+    float blend;
+    float filter_blend;
+    float screen_fade;
+
+} SSSRSetting;
+
+layout(set = 1, binding = 0, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_RAW;	
+layout(set = 1, binding = 1, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_PDF;	
+layout(set = 1, binding = 2, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_RESOLVE;	
+layout(set = 1, binding = 3, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR;		
+layout(set = 1, binding = 4, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_HISTORY;			
+layout(set = 1, binding = 5)            uniform sampler2D STORAGE_IMAGE_COLOR_PYRAMID;	
+
+
+#define THREADS_X 32
+#define THREADS_Y 32
+#define THREADS_Z 1
+
+layout (local_size_x = THREADS_X, local_size_y = THREADS_Y, local_size_z = THREADS_Z) in;
+void main() {
+
+	ivec2 gID = ivec2(gl_GlobalInvocationID.xy);
+
+    vec2 extent = HALF_SIZE_SSSR ? 
+                    vec2(HALF_WINDOW_WIDTH, HALF_WINDOW_HEIGHT) : 
+                    vec2(WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	if(gID.x >= extent.x || gID.y >= extent.y ) return;
+	vec2 inUV = gID / extent;
+
+	// 采样G Buffer信息 ////////////////////////////////////////////////////////////////////////////////////
+
+    vec4 worldPos    		= depthToWorld(inUV);        	
+    vec4 viewPos     		= worldToView(worldPos);      
+    vec4 ndcPos      		= viewToNdc(viewPos);
+
+    vec2 velocity           = texture(VELOCITY_SAMPLER, inUV).xy;
+    vec2 prevCoord          = inUV - velocity;    
+
+    ivec2 prevTexPos        = HALF_SIZE_SSSR ?                                                                                      
+                                    ivec2(fetchHalfScreenPixPos(prevCoord.xy)) :    
+                                    ivec2(fetchScreenPixPos(prevCoord.xy)) ;  
+
+    // 重投影
+    // vec4 prevClipPos    	= CAMERA.prev_proj * CAMERA.prev_view * vec4(worldPos.xyz, 1.0f);   	                                    //前帧的裁剪空间坐标
+    // ivec2 prevTexPos        = HALF_SIZE_SSSR ?                                                                                          //前帧的像素坐标
+    //                                 ivec2(fetchHalfScreenPixPos(ndcToScreen((prevClipPos.xy + vec2(0.005f, 0.005f)) / prevClipPos.w))) :  //半分辨率好像采样有点偏移      
+    //                                 ivec2(fetchScreenPixPos(ndcToScreen((prevClipPos.xy) / prevClipPos.w))) ;        
+
+
+
+	// 本帧结果////////////////////////////////////////////////////////////////////////////////////
+    vec4 currentColor       = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID); 
+
+	// 历史帧////////////////////////////////////////////////////////////////////////////////////
+	vec3 historyColor 		= RGBtoYCoCg(imageLoad(STORAGE_IMAGE_SSSR_HISTORY, prevTexPos).xyz);
+
+    AdjacentTex3 adjTex;
+    adjTex.color[0][0]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(-1, -1)).xyz;	
+    adjTex.color[0][1]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(0, -1)).xyz;	
+    adjTex.color[0][2]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(1, -1)).xyz;	
+    adjTex.color[1][0]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(-1, 0)).xyz;	
+    adjTex.color[1][1]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(0, 0)).xyz;	
+    adjTex.color[1][2]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(1, 0)).xyz;	
+    adjTex.color[2][0]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(-1, 1)).xyz;	
+    adjTex.color[2][1]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(0, 1)).xyz;	
+    adjTex.color[2][2]      = imageLoad(STORAGE_IMAGE_SSSR_RESOLVE, gID + ivec2(1, 1)).xyz;	
+    RGBtoYCoCg(adjTex);
+
+
+    vec3 cmin           = minAdj3(adjTex);
+    vec3 cmax           = maxAdj3(adjTex);
+
+    //historyColor = YCoCgtoRGB(clamp(historyColor, cmin, cmax));
+    historyColor = YCoCgtoRGB(clampedColor(historyColor, adjTex));
+
+    //vec3 historyColor = imageLoad(STORAGE_IMAGE_SSSR_HISTORY, prevTexPos).xyz;
+
+	// 混合输出////////////////////////////////////////////////////////////////////////////////////
+    //float blendWeight = clamp(SSSRSetting.filter_blend * (1 - length(velocity) * 8), 0.0f, 1.0f);
+    float blendWeight = clamp(SSSRSetting.filter_blend, 0.0f, 1.0f);
+
+	vec3 finalColor     	= Lerp(currentColor.xyz, historyColor.xyz, blendWeight);
+	imageStore(STORAGE_IMAGE_SSSR, ivec2(gID.xy), vec4( finalColor, 1.0 ) );
+    //imageStore(STORAGE_IMAGE_SSSR, ivec2(gID.xy), vec4( currentColor.xyz, 1.0 ) );
+
+    //imageStore(STORAGE_IMAGE_SSSR, ivec2(gID.xy), vec4( prevCoord, 0.0 , 1.0 ) );
+    //imageStore(STORAGE_IMAGE_SSSR, ivec2(gID.xy), vec4( velocity, 0.0 , 1.0 ) );
+}

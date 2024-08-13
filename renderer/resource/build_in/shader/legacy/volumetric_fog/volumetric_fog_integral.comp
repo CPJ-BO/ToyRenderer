@@ -1,0 +1,99 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+#include "common_volumetric_fog.glsl"
+
+layout(set = 1, binding = 0, rgba16f) uniform image3D VOLUMETRIC_FOG_RAW;				//未计算积分时的体素纹理
+layout(set = 1, binding = 1, rgba16f) uniform image3D VOLUMETRIC_FOG_RAW_HISTORY;		//未计算积分时的历史帧
+layout(set = 1, binding = 2, rgba16f) uniform image3D VOLUMETRIC_FOG_INTEGRAL;			//积分体素纹理
+layout(set = 1, binding = 3, rgba16f) uniform image2D VOLUMETRIC_FOG_IMG;				//最终画面的平铺2D纹理
+
+layout(push_constant) uniform volumetricFogSetting {
+	bool  isotropic;
+	float henyey_greenstein_G;
+	float attenuation_factor;	// 衰减系数 = 外散射系数 + 吸收率
+	float scattering_intencity;
+	float blend_factor;
+	float indirect_light_intencity;
+} VolumetricFogSetting;
+
+#define THREADS_X VOLUMETRIC_FOG_SIZE_X / 10	
+#define THREADS_Y VOLUMETRIC_FOG_SIZE_Y / 10	
+#define THREADS_Z 1	
+
+
+
+
+
+layout (local_size_x = THREADS_X, local_size_y = THREADS_Y, local_size_z = THREADS_Z) in;
+void main() 
+{
+	// 阶段二 沿视线方向积分，并混合历史的体素光照信息
+	vec3 gID = gl_GlobalInvocationID.xyz;
+	if(gID.x >= VOLUMETRIC_FOG_SIZE_X || gID.y >= VOLUMETRIC_FOG_SIZE_Y || gID.z >= 1) return;
+
+	vec3 accumulateColor = vec3(0.0f);
+	for(int z = 0; z < VOLUMETRIC_FOG_SIZE_Z; z++)
+	{
+
+		ivec3 currentClusterID = ivec3(gID.xy, z);
+		vec4 currentData = imageLoad(VOLUMETRIC_FOG_RAW, currentClusterID);
+
+		//历史帧
+		{
+			vec4 worldPos 			= fetchVolumetricClusterPos(currentClusterID);								//本帧世界坐标
+			vec4 prevClipPos    	= CAMERA.prev_proj * CAMERA.prev_view * worldPos;   						//前帧的裁剪空间坐标
+			vec3 prevNdcPos        	= prevClipPos.xyz / prevClipPos.w ;   										//前帧的ndc坐标
+
+			ivec3 prevClusterID 	= fetchVolumetricClusterID(prevNdcPos);
+			vec4 prevData        	= imageLoad(VOLUMETRIC_FOG_RAW_HISTORY, prevClusterID);	//
+
+			AdjacentTex3 adjTex;
+			adjTex.color[0][0]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(-1, -1, 0)).xyz;	
+			adjTex.color[0][1]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(0, -1, 0)).xyz;	
+			adjTex.color[0][2]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(1, -1, 0)).xyz;	
+			adjTex.color[1][0]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(-1, 0, 0)).xyz;	
+			adjTex.color[1][1]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(0, 0, 0)).xyz;	
+			adjTex.color[1][2]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(1, 0, 0)).xyz;	
+			adjTex.color[2][0]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(-1, 1, 0)).xyz;	
+			adjTex.color[2][1]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(0, 1, 0)).xyz;	
+			adjTex.color[2][2]      = imageLoad(VOLUMETRIC_FOG_RAW, ivec3(currentClusterID.xyz) + ivec3(1, 1, 0)).xyz;	
+			prevData.xyz = clampedColor(prevData.xyz, adjTex);
+
+			if(	prevNdcPos.x >= -1 && prevNdcPos.x <= 0.99 &&
+				prevNdcPos.y >= -1 && prevNdcPos.y <= 0.99)		//边缘处有bug
+			{
+				currentData.xyz = Lerp(prevData.xyz, currentData.xyz, VolumetricFogSetting.blend_factor);	
+			}
+		}
+
+		accumulateColor += currentData.xyz * currentData.w;	//此处用到的穿透率是直接到camera处的，没有分段，假定介质均匀，也就无需计算accumulatedTransmittance
+
+
+
+		imageStore(VOLUMETRIC_FOG_INTEGRAL, currentClusterID, vec4( accumulateColor, currentData.w) );
+		imageStore(VOLUMETRIC_FOG_RAW, currentClusterID, currentData );	//把当前帧的混合信息写回去，再拷贝回history
+	}
+}
+
+
+
+
+// float4 ScatterStep(float3 accumulatedLight, float accumulatedTransmittance, float3 sliceLight, float sliceDensity)
+// {
+//     sliceDensity = max(sliceDensity, 0.000001);
+//     float  sliceTransmittance = exp(-sliceDensity / _GridSizeZ);
+
+//     // Seb Hillaire's improved transmission by calculating an integral over slice depth instead of
+//     // constant per slice value. Light still constant per slice, but that's acceptable. See slide 28 of
+//     // Physically-based & Unified Volumetric Rendering in Frostbite
+//     // http://www.frostbite.com/2015/08/physically-based-unified-volumetric-rendering-in-frostbite/
+//     float3 sliceLightIntegral = sliceLight * (1.0 - sliceTransmittance) / sliceDensity;
+
+//     accumulatedLight += sliceLightIntegral * accumulatedTransmittance;
+//     accumulatedTransmittance *= sliceTransmittance;
+
+//     return float4(accumulatedLight, accumulatedTransmittance);
+// }

@@ -1,0 +1,24 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Model",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "filePath": "resource/build_in/config/model/klee.model"
+                },
+                "path": "resource/build_in/model/Klee/klee.fbx",
+                "processSetting": {
+                    "smoothNormal": false,
+                    "flipUV": false,
+                    "loadMaterials": false,
+                    "tangentSpace": true,
+                    "generateBVH": false,
+                    "generateCluster": false,
+                    "generateVirtualMesh": false
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,255 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+
+layout(push_constant) uniform sSSRSetting {
+    int max_mip;
+    int start_mip;
+    int end_mip;
+	float thickness;
+    int max_loop;
+    float scale;
+    float max_roughness;
+    float importance_sample_bias;
+    float min_hit_distance;
+
+    bool enable_skybox;
+    float blend;
+    float filter_blend;
+    float screen_fade;
+
+} SSSRSetting;
+
+layout(set = 1, binding = 0, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_RAW;	
+layout(set = 1, binding = 1, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_PDF;	
+layout(set = 1, binding = 2, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_RESOLVE;	
+layout(set = 1, binding = 3, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR;		
+layout(set = 1, binding = 4, rgba16f)   uniform image2D STORAGE_IMAGE_SSSR_HISTORY;			
+layout(set = 1, binding = 5)            uniform sampler2D STORAGE_IMAGE_COLOR_PYRAMID;	
+
+float getScreenFadeBord(vec2 pos, float value)
+{
+    float borderDist = min(1 - max(pos.x, pos.y), min(pos.x, pos.y));
+    return Saturate(borderDist > value ? 1 : borderDist / value);
+}
+
+bool validUV(vec2 uv, vec2 border)
+{
+    return  uv.x <= 1.0f - border.x && uv.x >= 0.0f + border.x && 
+            uv.y <= 1.0f - border.y && uv.y >= 0.0f + border.y;
+}
+
+vec2 getCellCount(int mipLevel)
+{
+    return textureSize(DEPTH_PYRAMID_SAMPLER_MIN, mipLevel).xy;
+}
+
+vec2 getCell(vec2 uv, int level)
+{
+	return floor(uv * getCellCount(level));
+}
+
+bool crossedCellBoundary(vec2 cellIdxOne, vec2 cellIdxTwo)
+{
+	return cellIdxOne.x != cellIdxTwo.x || cellIdxOne.y != cellIdxTwo.y;
+}
+
+float getMarchStep(vec2 start, vec2 end, int mipLevel)
+{  
+    vec2 mipUV = 1.0 / getCellCount(mipLevel);
+    vec2 dir = abs(end - start);
+    return length( vec2( min(dir.x, mipUV.x), min(dir.y, mipUV.y) ) ) * SSSRSetting.scale;    //位移长度，每次位移必不会超过一个格子（但是可能穿过对角）
+}
+
+float sampleDepth(sampler2D depth, int mipLevel, vec2 uv)
+{
+    vec2 cellSize = getCellCount(mipLevel);
+    // vec2 deltaUV = 1.0 / cellSize;
+    // float minDepth[5];
+
+    // float color00 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(-1, -1))), mipLevel ).r;
+	// float color01 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(-1, 0))), mipLevel ).r;
+	// float color02 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(-1, 1))), mipLevel ).r;
+	// float color10 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(0, -1))), mipLevel ).r;
+    // float color11 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(0, 0))), mipLevel ).r;
+	// float color12 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(0, 1))), mipLevel ).r;
+	// float color20 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(1, -1))), mipLevel ).r;
+	// float color21 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(1, 0))), mipLevel ).r;
+    // float color22 = texelFetch( depth, ivec2(floor(uv * cellSize + vec2(1, 1))), mipLevel ).r;
+    // return min(min(min(min(min(min(min(min(color00, color01), color02), color10), color11), color12), color20), color21), color22);
+            
+
+    // minDepth[0] = texture(depth, uv + vec2(-1, -1) * deltaUV, mipLevel).r;
+    // minDepth[1] = texture(depth, uv + vec2(-1, 1) * deltaUV, mipLevel).r;
+    // minDepth[2] = texture(depth, uv + vec2(1, -1) * deltaUV, mipLevel).r;
+    // minDepth[3] = texture(depth, uv + vec2(1, 1) * deltaUV, mipLevel).r;
+
+    // return min(min(min(minDepth[0], minDepth[1]), minDepth[2]), minDepth[3]);
+
+    //return texture(depth, uv, mipLevel).r;
+    return texelFetch(depth, ivec2(floor(uv * cellSize)), mipLevel ).r;
+}
+
+vec4 trace_Hiz( int start_level, 
+                int max_level, 
+                int end_level, 
+                int max_loop, 
+                float thickness,
+                vec3 world_pos,
+                vec3 world_dir)
+{
+    
+    // 步进起始点             
+    vec4 baseClipPos            = worldToCLip(vec4(world_pos, 1.0f));   
+    highp float baseW           = 1.0 / baseClipPos.w;                                    
+    highp float baseDr          = 1.0 / (baseClipPos.z * baseW);
+    highp vec2 baseUV           = ndcToScreen(baseClipPos.xy * baseW);                 
+
+    // 步进方向
+    vec4 targetWorldPos         = vec4(world_pos + world_dir, 1.0f);    
+    vec4 targetClipPos          = worldToCLip(targetWorldPos);
+    highp float targetW         = 1.0 / targetClipPos.w;                    //ndc空间的w坐标倒数，线性
+    highp float targetDr        = 1.0 / (targetClipPos.z * targetW);        //ndc空间的深度倒数，线性相关于view space的深度
+    highp vec2 targetUV         = ndcToScreen(targetClipPos.xy * targetW);  //uv坐标，线性
+    highp float targetDist      = length(world_dir);
+
+    // 步进单位
+    float deltaScale            = 1 / length(targetUV - baseUV);            //单位长度
+    highp vec2 deltaUV          = (targetUV - baseUV)   * deltaScale;            
+    highp float deltaW          = (targetW - baseW)     * deltaScale;             
+    highp float deltaDr         = (targetDr - baseDr)   * deltaScale;
+    float deltaDist             = targetDist            * deltaScale;
+
+    // Hiz加速////////////////////////////////////////////
+    highp vec2 currentUV        = baseUV;
+    highp float currentDr       = baseDr;
+    highp float currentDist     = 0;
+
+    float marchStep             = getMarchStep(currentUV, currentUV + deltaUV, 0);
+    currentUV                   += deltaUV * marchStep;                 //启动前先位移一次
+    currentDr                   += deltaDr * marchStep;                 //深度的倒数，越远越小
+    currentDist                 += deltaDist * marchStep;
+    
+    int level                   = start_level;
+    float loop                  = 0;
+    bool valid                  = false;    //最终的相交结果是否有效
+    //ivec4 levelCnt            = ivec4(0);
+    while(loop < max_loop)  
+    {
+        loop++;
+        //if(level < 4) levelCnt[level]++;
+
+        float marchStep         = getMarchStep(currentUV, currentUV + deltaUV, level);
+
+        highp vec2 tempUV       = currentUV + deltaUV * marchStep;
+        highp float tempDr;
+        if(level > 0)   tempDr  = 1.0 / (sampleDepth(DEPTH_PYRAMID_SAMPLER_MIN,  level, tempUV).r);    
+        else            tempDr  = 1.0 / (sampleDepth(DEPTH_SAMPLER,              level, tempUV).r);
+
+
+        //if(tempDr - 1.0 < 0.0001) break;
+        if(!validUV(tempUV, vec2(0.0f)))    level--;                        //0. 超出UV范围，缩短测试距离
+        else if(tempDr <= currentDr)                                        //1. 测试步进未被遮挡，移动测试点
+        {
+            currentUV += deltaUV * marchStep;
+            currentDr += deltaDr * marchStep;
+            currentDist += deltaDist * marchStep;
+
+            level = min(max_level, level + 1); 
+
+            // vec2 oldCell    = getCell(currentUV, level);
+            // vec2 newCell    = getCell(tempUV, level);
+            //if(crossedCellBoundary(oldCell, newCell)) level = min(max_level, level + 1); 
+        }
+        else                                                                //2. 被遮挡，缩短测试距离
+        {
+            level--;
+        }
+
+        if(level < end_level)     //终止搜索
+        {   
+            float finalMarchDepth   = LinearEyeDepth(1.0 / currentDr,                             CAMERA.near_far.x, CAMERA.near_far.y);
+            float finalHitDepth     = LinearEyeDepth(sampleDepth(DEPTH_SAMPLER, 0, currentUV),    CAMERA.near_far.x, CAMERA.near_far.y);
+
+            // 命中判定：厚度满足要求（反射march到的深度与该点处遮挡深度差），并非无限远处，uv有效，不是到循环才停止，trace距离足够远
+            if(     finalMarchDepth > finalHitDepth - thickness &&
+                    //!(currentDr - 1.0 < 0.0001) &&    //可以trace天空盒
+                    validUV(currentUV, vec2(0.01)) &&
+                    loop < max_loop && 
+                    currentDist > SSSRSetting.min_hit_distance)     valid = true;
+            break;
+        }
+    }
+
+    return vec4(currentUV, 1.0 / currentDr, valid ? 1.0f : 0.0f);
+}
+
+#define THREADS_X 32
+#define THREADS_Y 32
+#define THREADS_Z 1
+
+layout (local_size_x = THREADS_X, local_size_y = THREADS_Y, local_size_z = THREADS_Z) in;
+void main() {
+
+	ivec2 gID = ivec2(gl_GlobalInvocationID.xy);
+
+    vec2 extent = HALF_SIZE_SSSR ? 
+                    vec2(HALF_WINDOW_WIDTH, HALF_WINDOW_HEIGHT) : 
+                    vec2(WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	if(gID.x >= extent.x || gID.y >= extent.y ) return;
+	vec2 inUV = gID / extent;
+
+ 
+    // 随机种子 ////////////////////////////////////////////////////////////////////////////////////
+    vec2 noise = fetchNoise2D(gID);
+    int totalTicks = GLOBAL_SETTING.totalTicks % 16;
+    vec2 ditter = vec2(	random(noise.x + totalTicks + gID.x),
+						random(noise.y + totalTicks + gID.y));    
+	
+    // 采样G Buffer信息 ////////////////////////////////////////////////////////////////////////////////////
+    vec4 worldPos       = vec4(depthToWorld(inUV).xyz, 1.0f);
+
+    vec3 N              = fetchNormal(inUV);    
+    vec3 V              = normalize(CAMERA.pos.xyz - worldPos.xyz);		
+    vec3 L              = normalize(reflect(-V, N)) * max(1.0f, min(5.0f, length(CAMERA.pos.xyz - worldPos.xyz) - 2.0f));   
+
+    float pdf           = 1.0f;
+    float roughness     = fetchRoughness(inUV);
+    float a2            = Pow4(roughness);
+
+    if( length(N)   < 0.01f || 
+        roughness   < 0.0f  || 
+        roughness   > SSSRSetting.max_roughness)    //没有有效的法线/粗糙度信息
+    {
+		imageStore(STORAGE_IMAGE_SSSR_RAW, ivec2(gID.xy), vec4(0.0f) );
+        imageStore(STORAGE_IMAGE_SSSR_PDF, ivec2(gID.xy), vec4(0.0f) );
+        return;
+    }
+
+    roughness           = max(0.04f, roughness);  //取个最小值
+    a2                  = Pow4(roughness);
+
+    // 计算射线 ////////////////////////////////////////////////////////////////////////////////////
+    //vec2 Xi             = Hammersley(totalTicks, 16); 
+    //vec2 Xi             = Hammersley(fuck, 32); 
+    vec2 Xi             = fract(ditter.xy);
+
+    Xi.y                = Lerp(Xi.y, 0.0f, SSSRSetting.importance_sample_bias); //BRDF的拖尾会产生大量噪声，对重要性采样的方向做些偏移限制来减小
+
+    vec4 newSample      = ImportanceSampleGGX( Xi, a2 );
+    vec3 H              = TangentToWorld(newSample.xyz, N);   //半程向量
+    pdf                 = newSample.a;
+    L                   = 2.0 * dot(V, H) * H - V;
+
+    vec4 tarceResult    = trace_Hiz( SSSRSetting.start_mip, SSSRSetting.max_mip, SSSRSetting.end_mip, SSSRSetting.max_loop, SSSRSetting.thickness, worldPos.xyz, L);
+    tarceResult.a       = Square( tarceResult.a * getScreenFadeBord(tarceResult.xy, SSSRSetting.screen_fade) );     //屏幕边缘淡出
+
+
+    // 输出结果， 本轮输出的是光线命中点的位置信息和PDF，下轮负责采样颜色和计算 /////////////////////////////////////////////////////////////////////////////////
+
+    imageStore(STORAGE_IMAGE_SSSR_RAW, ivec2(gID.xy), tarceResult);
+    imageStore(STORAGE_IMAGE_SSSR_PDF, ivec2(gID.xy), vec4(pdf, vec3(0.0f)));
+}

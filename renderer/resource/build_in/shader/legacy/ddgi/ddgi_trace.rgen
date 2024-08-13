@@ -1,0 +1,79 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../include/common.glsl"
+
+#include "ddgi_layout.glsl"
+
+vec3 spherical_fibonacci(float i, float n)
+{
+    const float PHI = sqrt(5) * 0.5 + 0.5;
+#define madfrac(A, B) ((A) * (B)-floor((A) * (B)))
+    float phi       = 2.0 * M_PI * madfrac(i, PHI - 1);
+    float cos_theta = 1.0 - (2.0 * i + 1.0) * (1.0 / n);
+    float sin_theta = sqrt(clamp(1.0 - cos_theta * cos_theta, 0.0f, 1.0f));
+
+    return vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+
+#undef madfrac
+}
+
+layout(location = 0) rayPayloadEXT DDGIPayload payload;
+
+layout(push_constant) uniform TraceSetting {
+	int volume_light_id;
+	float _padding[3];
+} traceSetting;
+
+void main() 
+{
+  VolumeLight volumeLight = LIGHT.volumeLights[traceSetting.volume_light_id];
+
+	ivec2 pixel_coord = ivec2(gl_LaunchIDEXT.xy);
+  int   probe_index = pixel_coord.y;
+  int   ray_index   = pixel_coord.x;
+  ivec3 probe_coord = fetchProbeCoord(volumeLight.setting, probe_index);
+
+
+
+  // vec2 noise = fetchNoise2D(pixel_coord);
+  // int totalTicks = GLOBAL_SETTING.totalTicks % 32;
+  // vec3 ditter = vec3(	random(vec2(noise.x + totalTicks + probe_coord.x)),
+  //                     random(vec2(noise.y + totalTicks + probe_coord.y)),
+  //                     random(vec2(noise.y + totalTicks + probe_coord.z)));    
+	// ditter = Saturate(ditter);	
+
+
+
+  vec3  origin      = fetchProbeWorldPos(volumeLight.setting, probe_coord);
+  vec3  direction   = normalize(spherical_fibonacci(ray_index, volumeLight.setting.rays_per_probe));  
+  //vec3  direction   = normalize(ditter * 0.01 + spherical_fibonacci(ray_index, volumeLight.setting.rays_per_probe));  
+
+	float tmin        = 0.001;
+	float tmax        = MAX_HIT_DIST;
+
+  payload.dist      = tmax;
+  payload.normal    = vec4(0.0f);
+  payload.albedo    = vec4(0.0f);
+  payload.emission  = vec4(0.0f);
+
+	traceRayEXT(TLAS, 			  // acceleration structure
+          gl_RayFlagsOpaqueEXT,   // rayFlags
+          0xFF,           				// cullMask
+          0,              				// sbtRecordOffset
+          0,              				// sbtRecordStride
+          0,              				// missIndex
+          origin.xyz,     				// ray origin
+          tmin,           				// ray min range
+          direction.xyz,  				// ray direction
+          tmax,           				// ray max range
+          0               				// payload (location = 0)
+  );
+
+  imageStore(G_BUFFER_POS_TEXTURE,      pixel_coord, vec4(direction, payload.dist)); 
+  imageStore(G_BUFFER_NORMAL_TEXTURE,   pixel_coord, payload.normal);
+  imageStore(G_BUFFER_ALBEDO_TEXTURE,   pixel_coord, payload.albedo);
+  imageStore(G_BUFFER_EMISSION_TEXTURE, pixel_coord, payload.emission);
+}
