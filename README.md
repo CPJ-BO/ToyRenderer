@@ -22,7 +22,7 @@
 
 ```shell
 git clone https://github.com/CPJ-BO/ToyRenderer.git
-cd /ToyRenderer/renderer
+cd ToyRenderer/renderer
 xmake build renderer
 xmake run renderer
 ```
