@@ -1,6 +1,6 @@
 add_rules("mode.debug", "mode.release")
-
 add_requires("vulkansdk", "glfw", "imgui", "stb", "assimp", "cereal", "spdlog", "eventpp", "meshoptimizer", "metis", "mikktspace", "eigen")
+set_encodings("utf-8")
 
 target("renderer")
     set_languages("c++20")

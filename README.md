@@ -18,7 +18,7 @@
 仓库的其他部分也包含了HAL抽象，资源系统，Component-Entity-Scene等功能的简单实现。
 
 ## 构建
-本仓库使用xmake作为构建工具。HAL抽象仅实现了windows平台，但并未在项目内大范围使用，其他平台构建时移除相应内容即可 **(?)**。
+本仓库使用xmake作为构建工具。目前HAL抽象仅实现了windows平台，RHI仅支持Vulkan后端。
 
 ```shell
 git clone https://github.com/CPJ-BO/ToyRenderer.git

@@ -166,6 +166,7 @@ public:
         case FORMAT_R8G8_SRGB:             format = VK_FORMAT_R8G8_SRGB;               break;
         case FORMAT_R8G8B8_SRGB:           format = VK_FORMAT_R8G8B8_SRGB;             break;
         case FORMAT_R8G8B8A8_SRGB:         format = VK_FORMAT_R8G8B8A8_SRGB;           break;
+        case FORMAT_B8G8R8A8_SRGB:         format = VK_FORMAT_B8G8R8A8_SRGB;           break;
 
         case FORMAT_R16_SFLOAT:            format = VK_FORMAT_R16_SFLOAT;              break;
         case FORMAT_R16G16_SFLOAT:         format = VK_FORMAT_R16G16_SFLOAT;           break;
@@ -232,6 +233,7 @@ public:
         case VK_FORMAT_R8G8_SRGB:            format = FORMAT_R8G8_SRGB;               break;
         case VK_FORMAT_R8G8B8_SRGB:          format = FORMAT_R8G8B8_SRGB;             break;
         case VK_FORMAT_R8G8B8A8_SRGB:        format = FORMAT_R8G8B8A8_SRGB;           break;
+        case VK_FORMAT_B8G8R8A8_SRGB:        format = FORMAT_B8G8R8A8_SRGB;           break;
 
         case VK_FORMAT_R16_SFLOAT:           format = FORMAT_R16_SFLOAT;              break;
         case VK_FORMAT_R16G16_SFLOAT:        format = FORMAT_R16G16_SFLOAT;           break;

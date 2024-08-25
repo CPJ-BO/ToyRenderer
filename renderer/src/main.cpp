@@ -10,7 +10,8 @@
 
 Extent2D windowsExtent = { 2048, 1152 };
 Offset2D windowsOffset = { 2048, 1152 };
-TextureFormat colorFormat = FORMAT_R8G8B8A8_UNORM;
+TextureFormat colorFormat = FORMAT_R8G8B8A8_UNORM;   
+// TextureFormat colorFormat = FORMAT_B8G8R8A8_SRGB;    // 取决于具体环境支持的交换链格式，也可能验证层报错，多试试看吧
 TextureFormat depthFormat = FORMAT_D24_UNORM_S8_UINT;
 uint32_t framesInFlight = 3;
 std::string shaderPath = "resource/build_in/shader/";
