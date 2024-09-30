@@ -3,6 +3,7 @@
 #include "Eigen/Core"
 #include "Eigen/Geometry"
 
+#include <cmath>
 #include <cstdint>
 
 #define PI 3.14159265358979323846
@@ -40,31 +41,53 @@ namespace Math
     static inline Vec3 ToAngle(Vec3 radians) { return radians * 180.0f / PI; }
     static inline Vec4 ToAngle(Vec4 radians) { return radians * 180.0f / PI; }
 
+    static Vec3 ClampEulerAngle(Vec3 angle)
+    {
+        Vec3 ret = angle;
+        if(ret.y() > 89.9f) ret.y() = 89.9f;
+        if(ret.y() < -89.9f) ret.y() = -89.9f;
+
+        ret.x() = fmod(ret.x(), 360.0f);
+        ret.y() = fmod(ret.y(), 360.0f);
+        if(ret.x() > 180.0f) ret.x() -= 360.0f;
+        if(ret.y() > 180.0f) ret.y() -= 360.0f;
+
+        return ret;
+    }
+
     // static Vec3 ToEulerAngle(const Quaternion& q)
     // {
-    //     float yaw, pitch, roll;
-
-    //     // yaw (z-axis rotation)
-    //     float siny_cosp = +2.0 * (q.w() * q.y() + q.x() * q.z());
-    //     float cosy_cosp = +1.0 - 2.0 * (q.z() * q.z() + q.y() * q.y());
-    //     yaw = atan2(siny_cosp, cosy_cosp);
-
-    //     // pitch (y-axis rotation)
-    //     float sinp = +2.0 * (q.w() * q.z() - q.y() * q.x());
-    //     if (fabs(sinp) >= 1)    pitch = copysign(PI / 2, sinp); // use 90 degrees if out of range
-    //     else                        pitch = asin(sinp);
-        
-    //     // roll (x-axis rotation)
-    //     float sinr_cosp = +2.0 * (q.w() * q.x() + q.z() * q.y());
-    //     float cosr_cosp = +1.0 - 2.0 * (q.x() * q.x() + q.z() * q.z());
-    //     roll = atan2(sinr_cosp, cosr_cosp);
-
-    //     return ToAngle(Vec3(yaw, pitch, roll));
+    //     return ToAngle(q.toRotationMatrix().eulerAngles(1, 2, 0));    // yaw = UnitY轴, pitch = UnitZ轴, roll = UnitX轴
+    //                                                                   // 有奇异性问题
     // }
 
-    static Vec3 ToEulerAngle(const Quaternion& q)
-    {
-        return ToAngle(q.toRotationMatrix().eulerAngles(1, 2, 0));    // yaw = UnitY轴, pitch = UnitZ轴, roll = UnitX轴
+    // https://blog.csdn.net/WillWinston/article/details/125746107
+    static Vec3 ToEulerAngle(const Quaternion& q)   // 确保pitch的范围[-PI/2, PI/2]
+    {                                               // yaw和roll都是[-PI, PI]
+        double angles[3];
+
+        // yaw (y-axis rotation)
+        double sinr_cosp = 2 * (q.w() * q.y() -q.x() * q.z());
+        double cosr_cosp = 1 - 2 * (q.y() * q.y() + q.z() * q.z());
+        angles[0] = std::atan2(sinr_cosp, cosr_cosp);
+
+        // pitch (z-axis rotation)
+        double sinp = 2 * (q.w() * q.z() + q.x() * q.y());
+        if (std::abs(sinp) >= 1)
+            angles[1] = std::copysign(PI / 2, sinp); // use 90 degrees if out of range
+        else
+            angles[1] = std::asin(sinp);
+
+        // roll (x-axis rotation)
+        double siny_cosp = 2 * (q.w() * q.x() - q.y() * q.z());
+        double cosy_cosp = 1 - 2 * (q.x() * q.x() + q.z() * q.z());
+        angles[2] = std::atan2(siny_cosp, cosy_cosp);     
+
+        angles[0] *= 180 / PI;  // 有一点点精度问题，可以忽略
+        angles[1] *= 180 / PI;
+        angles[2] *= 180 / PI; 
+
+        return Vec3(angles[0], angles[1], angles[2]);
     }
 
     static Quaternion ToQuaternion(Vec3 eulerAngle)
@@ -76,6 +99,45 @@ namespace Math
 
         return yaw * pitch * roll;  // 有顺序
     }
+
+    // 下面这一组也是对的，旋转顺序不一样
+    // static Vec3 ToEulerAngle(const Quaternion& q)   // 确保pitch的范围[-PI/2, PI/2]
+    // {                                               // yaw和roll都是[-PI, PI]
+    //     double angles[3];
+
+    //     // roll (x-axis rotation)
+    //     double sinr_cosp = 2 * (q.w() * q.x() + q.y() * q.z());
+    //     double cosr_cosp = 1 - 2 * (q.x() * q.x() + q.z() * q.z());
+    //     angles[2] = std::atan2(sinr_cosp, cosr_cosp);
+
+    //     // pitch (z-axis rotation)
+    //     double sinp = 2 * (q.w() * q.z() - q.y() * q.x());
+    //     if (std::abs(sinp) >= 1)
+    //         angles[1] = std::copysign(PI / 2, sinp); // use 90 degrees if out of range
+    //     else
+    //         angles[1] = std::asin(sinp);
+
+    //     // yaw (y-axis rotation)
+    //     double siny_cosp = 2 * (q.w() * q.y() + q.x() * q.z());
+    //     double cosy_cosp = 1 - 2 * (q.y() * q.y() + q.z() * q.z());
+    //     angles[0] = std::atan2(siny_cosp, cosy_cosp);     
+
+    //     angles[0] *= 180 / PI;  // 有一点点精度问题，可以忽略
+    //     angles[1] *= 180 / PI;
+    //     angles[2] *= 180 / PI; 
+
+    //     return Vec3(angles[0], angles[1], angles[2]);
+    // }
+
+    // static Quaternion ToQuaternion(Vec3 eulerAngle)
+    // {
+    //     Vec3 radians = ToRadians(eulerAngle) ;  // 右手系，Y向上
+    //     Eigen::AngleAxisf yaw = Eigen::AngleAxisf(radians(0),Vec3::UnitY()); 
+    //     Eigen::AngleAxisf pitch = Eigen::AngleAxisf(radians(1),Vec3::UnitZ());  
+    //     Eigen::AngleAxisf roll = Eigen::AngleAxisf(radians(2),Vec3::UnitX());
+
+    //     return roll * pitch * yaw;  // 有顺序
+    // }
 
     static Mat4 LookAt(Vec3 eye, Vec3 center, Vec3 up)
     {
@@ -115,7 +177,7 @@ namespace Math
 
     static Mat4 Ortho(float left, float right, float bottom, float top, float near, float far)
     {
-        Mat4 mat = Mat4::Ones();
+        Mat4 mat = Mat4::Identity();
         mat(0, 0) = 2.0f / (right - left);
         mat(1, 1) = 2.0f / (top - bottom);
         mat(2, 2) = - 1.0f / (far - near);
@@ -123,5 +185,103 @@ namespace Math
         mat(1, 3) = - (top + bottom) / (top - bottom);
         mat(2, 3) = - near / (far - near);
         return mat;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+    static inline uint32_t Align(uint32_t value, uint32_t alignment)
+    {
+        return (value + alignment - 1) & ~(alignment - 1);
+    }
+
+    //UE5 MicrosoftPlatformMath.h
+
+    static inline bool IsNaN(float A) { return _isnan(A) != 0; }
+    static inline bool IsNaN(double A) { return _isnan(A) != 0; }
+    static inline bool IsFinite(float A) { return _finite(A) != 0; }
+    static inline bool IsFinite(double A) { return _finite(A) != 0; }
+
+    static inline uint64_t CountLeadingZeros64(uint64_t Value)
+    {
+        //https://godbolt.org/z/Ejh5G4vPK	
+        // return 64 if value if was 0
+        unsigned long BitIndex;
+        if (!_BitScanReverse64(&BitIndex, Value)) BitIndex = -1;
+        return 63 - BitIndex;
+    }
+
+    static inline uint64_t CountTrailingZeros64(uint64_t Value)
+    {
+        // return 64 if Value is 0
+        unsigned long BitIndex;	// 0-based, where the LSB is 0 and MSB is 63
+        return _BitScanForward64(&BitIndex, Value) ? BitIndex : 64;
+    }
+
+    static inline uint32_t CountLeadingZeros(uint32_t Value)
+    {
+        // return 32 if value is zero
+        unsigned long BitIndex;
+        _BitScanReverse64(&BitIndex, uint64_t(Value) * 2 + 1);
+        return 32 - BitIndex;
+    }
+
+    static inline uint64_t CeilLogTwo64(uint64_t Arg)
+    {
+        // if Arg is 0, change it to 1 so that we return 0
+        Arg = Arg ? Arg : 1;
+        return 64 - CountLeadingZeros64(Arg - 1);
+    }
+
+    static inline uint32_t FloorLog2(uint32_t Value)
+    {
+        // Use BSR to return the log2 of the integer
+        // return 0 if value is 0
+        unsigned long BitIndex;
+        return _BitScanReverse(&BitIndex, Value) ? BitIndex : 0;
+    }
+    static inline uint8_t CountLeadingZeros8(uint8_t Value)
+    {
+        unsigned long BitIndex;
+        _BitScanReverse(&BitIndex, uint32_t(Value) * 2 + 1);
+        return uint8_t(8 - BitIndex);
+    }
+
+    static inline uint32_t CountTrailingZeros(uint32_t Value)
+    {
+        // return 32 if value was 0
+        unsigned long BitIndex;	// 0-based, where the LSB is 0 and MSB is 31
+        return _BitScanForward(&BitIndex, Value) ? BitIndex : 32;
+    }
+
+    static inline uint32_t CeilLogTwo(uint32_t Arg)
+    {
+        // if Arg is 0, change it to 1 so that we return 0
+        Arg = Arg ? Arg : 1;
+        return 32 - CountLeadingZeros(Arg - 1);
+    }
+
+    static inline uint32_t RoundUpToPowerOfTwo(uint32_t Arg)
+    {
+        return 1 << CeilLogTwo(Arg);
+    }
+
+    static inline uint64_t RoundUpToPowerOfTwo64(uint64_t Arg)
+    {
+        return uint64_t(1) << CeilLogTwo64(Arg);
+    }
+
+    static inline uint64_t FloorLog2_64(uint64_t Value)
+    {
+        unsigned long BitIndex;
+        return _BitScanReverse64(&BitIndex, Value) ? BitIndex : 0;
     }
 }

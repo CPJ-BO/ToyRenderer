@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "f2a93088-877f-49b8-8e91-074049d163a9"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Prop_MS_ObjectAll_01_Normal.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 2048,
+                    "height": 2048,
+                    "depth": 1
+                },
+                "mipLevels": 12,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

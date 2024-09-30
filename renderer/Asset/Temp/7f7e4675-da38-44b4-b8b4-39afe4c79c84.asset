@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "7f7e4675-da38-44b4-b8b4-39afe4c79c84"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Build_Common_Muqiao_01_Diffuse.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 1024,
+                    "height": 1024,
+                    "depth": 1
+                },
+                "mipLevels": 11,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

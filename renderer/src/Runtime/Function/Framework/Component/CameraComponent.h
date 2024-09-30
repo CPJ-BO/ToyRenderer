@@ -15,6 +15,10 @@ public:
 	virtual void Init() override;
 	virtual void Tick(float deltaTime) override;
 
+	bool IsActiveCamera();
+
+	inline void SetFov(float fovy) 							{ this->fovy = fovy; }
+
 	inline Vec3 GetPosition() const							{ return position; }
 	inline Vec3 GetFront() const							{ return front; }
 	inline Vec3 GetUp() const								{ return right.cross(front).normalized(); }	
@@ -33,17 +37,18 @@ public:
 
 	Frustum GetFrustum()									{ return frustum; }
 
+	virtual std::string GetTypeName() override				{ return "Camera Component"; }
 	virtual ComponentType GetType()	override 				{ return CAMERA_COMPONENT; }
 
 	void UpdateCameraInfo();
 
 private:
-	float yaw = 0.0f;
-	float pitch = 0.0f;
+	// float yaw = 0.0f;
+	// float pitch = 0.0f;
 	float fovy = 90.0f;
     float aspect = 16.0f / 9.0f;    // TODO 
 	float near = 0.1f;
-	float far = 200.0f;
+	float far = 1000.0f;
 
 	Vec3 position = Vec3::Zero();
 	Vec3 front = Vec3::Zero();
@@ -59,17 +64,21 @@ private:
 
 	CameraInfo cameraInfo;
 
+	void InputMove(float deltaTime);
+
 	void UpdateMatrix();
 
 private:
     BeginSerailize()
     SerailizeBaseClass(Component)
-	SerailizeEntry(yaw)
-    SerailizeEntry(pitch)
+	// SerailizeEntry(yaw)
+    // SerailizeEntry(pitch)
     SerailizeEntry(fovy)
 	SerailizeEntry(aspect)
     SerailizeEntry(near)
 	SerailizeEntry(far)
     EndSerailize
+
+	EnableComponentEditourUI()
 };
 

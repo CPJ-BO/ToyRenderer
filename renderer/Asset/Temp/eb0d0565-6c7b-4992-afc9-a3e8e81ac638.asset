@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "eb0d0565-6c7b-4992-afc9-a3e8e81ac638"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Build_MS_Tsg_02_Normal.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 2048,
+                    "height": 2048,
+                    "depth": 1
+                },
+                "mipLevels": 12,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

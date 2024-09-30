@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "de8d2f72-01f6-4572-9599-a4f8e2f35111"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Ajar_MS_BankaifangXC_02_Diffuse.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 2048,
+                    "height": 2048,
+                    "depth": 1
+                },
+                "mipLevels": 12,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "f28a4c96-40b1-4c08-9e94-e3d7eaf8b7e0"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Plot_Common_Ground_02_T4_Diffuse.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 1024,
+                    "height": 1024,
+                    "depth": 1
+                },
+                "mipLevels": 11,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

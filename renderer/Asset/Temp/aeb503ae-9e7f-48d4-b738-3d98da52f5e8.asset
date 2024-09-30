@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "aeb503ae-9e7f-48d4-b738-3d98da52f5e8"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Build_Common_Window_02_Diffuse.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 1024,
+                    "height": 1024,
+                    "depth": 1
+                },
+                "mipLevels": 11,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

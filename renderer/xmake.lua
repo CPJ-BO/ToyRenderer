@@ -1,5 +1,5 @@
 add_rules("mode.debug", "mode.release")
-add_requires("vulkansdk", "glfw", "imgui", "stb", "assimp", "cereal", "spdlog", "eventpp", "meshoptimizer", "metis", "mikktspace", "eigen")
+add_requires("vulkansdk", "glfw", "imgui", "stb", "assimp", "cereal", "spdlog", "eventpp", "meshoptimizer", "metis", "mikktspace", "eigen", "stduuid")
 set_encodings("utf-8")
 
 target("renderer")
@@ -7,8 +7,15 @@ target("renderer")
     set_kind("binary")
     add_files("src/**.cpp", "thirdparty/**.cpp", "thirdparty/**.c")
     add_includedirs("src/Runtime/")
-    add_includedirs("thirdparty/volk", "thirdparty/imgui", "thirdparty/vma", "thirdparty/spirv_reflect")
-    add_packages("vulkansdk", "glfw", "imgui", "stb", "assimp", "cereal", "spdlog", "eventpp", "meshoptimizer", "metis", "mikktspace", "eigen")
+    add_includedirs("src/Editor/")
+    add_includedirs("thirdparty/volk", 
+                    "thirdparty/imgui", 
+                    "thirdparty/vma", 
+                    "thirdparty/spirv_reflect", 
+                    "thirdparty/smhasher/src", 
+                    "thirdparty/implot", 
+                    "thirdparty/imgui-flame-graph")
+    add_packages("vulkansdk", "glfw", "imgui", "stb", "assimp", "cereal", "spdlog", "eventpp", "meshoptimizer", "metis", "mikktspace", "eigen", "stduuid")
 
 --
 -- If you want to known more usage about xmake, please see https://xmake.io

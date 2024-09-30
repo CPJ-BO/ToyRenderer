@@ -7,7 +7,7 @@
 typedef struct IndexRange
 {
     uint32_t begin = 0;
-    uint32_t size = 1;
+    uint32_t size = 0;
 
 private:
     BeginSerailize()
@@ -24,9 +24,9 @@ public:
     IndexAlloctor(uint32_t maxIndex = UINT32_MAX);
 
     uint32_t Allocate();
-    IndexRange AllocateRange(uint32_t size);
+    IndexRange Allocate(uint32_t size);
     void Release(uint32_t index);
-    void ReleaseRange(IndexRange range);
+    void Release(IndexRange range);
 
     inline uint32_t GetSize() { return maxIndex; }
 

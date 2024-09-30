@@ -11,7 +11,7 @@
 void FileSystem::Init(const std::string& basePath)
 {
     std::string abs = std::filesystem::absolute(".").generic_string();
-    size_t index = abs.find("renderer");
+    size_t index = abs.find(basePath);
     if(index == std::string::npos) 
     {
         ENGINE_LOG_FATAL("Can't init file system base path!");
@@ -35,15 +35,44 @@ std::string FileSystem::Absolute(const std::string& path)
 
 std::string FileSystem::Extension(const std::string& path)
 {
-    std::filesystem::path relativePath = this->root;
-    relativePath.append(path);
+    std::filesystem::path filePath = path;
 
-	std::string extension = relativePath.extension().generic_string();
+	std::string extension = filePath.extension().generic_string();
 	if (!extension.empty() && extension[0] == '.')
 	{
 		extension.erase(0, 1);
 	}
 	return extension;
+}
+
+std::string FileSystem::ReplaceExtension(const std::string& path, const std::string& extention)
+{
+	std::string filePath = path;
+	std::string oldExtention = Extension(path);
+	auto pos = filePath.rfind(oldExtention);
+	if(pos != std::string::npos && !oldExtention.empty())
+	{
+		filePath.erase(pos, oldExtention.length());
+		filePath.append(extention);
+	}
+	else 
+	{
+		filePath.append("." + extention);
+	}
+
+	return filePath;
+}
+
+std::string FileSystem::ReplaceFileName(const std::string& path, const std::string& fileName)
+{
+    std::filesystem::path relativePath = path;
+	return relativePath.replace_filename(fileName).generic_string();
+}
+
+std::string FileSystem::RemoveFilename(const std::string& path)
+{
+    std::filesystem::path relativePath = path;
+	return relativePath.remove_filename().generic_string();
 }
 
 std::string FileSystem::Basename(const std::string& path)
@@ -61,7 +90,6 @@ std::string FileSystem::Filename(const std::string& path)
 
 	return relativePath.filename().generic_string();
 }
-
 
 std::string FileSystem::ModifiedTime(const std::string& path)
 {
@@ -89,7 +117,7 @@ std::string FileSystem::ModifiedTime(const std::string& path)
 	return "";
 }
 
-std::vector<std::string> FileSystem::Traverse(const std::string& path, bool is_recursive, FileOrder file_order, bool is_reverse)
+std::vector<std::string> FileSystem::Traverse(const std::string& path, bool isRecursive, FileOrder fileOrder, bool isReverse)
 {
     std::string relativePath = this->root.generic_string();
     relativePath.append(path);
@@ -100,7 +128,7 @@ std::vector<std::string> FileSystem::Traverse(const std::string& path, bool is_r
 		return filenames;
 	}
 
-	if (is_recursive)
+	if (isRecursive)
 	{
 		for (const auto& file : std::filesystem::recursive_directory_iterator(relativePath))
 		{
@@ -116,10 +144,10 @@ std::vector<std::string> FileSystem::Traverse(const std::string& path, bool is_r
 	}
 
 	std::sort(filenames.begin(), filenames.end(),
-		[file_order, is_reverse](const std::string& lhs, const std::string& rhs)
+		[fileOrder, isReverse](const std::string& lhs, const std::string& rhs)
 		{
 			bool result = false;
-			switch (file_order)
+			switch (fileOrder)
 			{
 			case FILE_NAME:
 				result = lhs < rhs;
@@ -133,7 +161,7 @@ std::vector<std::string> FileSystem::Traverse(const std::string& path, bool is_r
 			default:
 				break;
 			}
-			return is_reverse ? !result : result;
+			return isReverse ? !result : result;
 		});
 
 	return filenames;
@@ -186,7 +214,7 @@ bool FileSystem::CreateFile(const std::string& filename, std::ios_base::openmode
 	return true;
 }
 
-bool FileSystem::CreateDir(const std::string& path, bool is_recursive)
+bool FileSystem::CreateDir(const std::string& path, bool isRecursive)
 {
 	if (Exists(path))
 	{
@@ -196,7 +224,7 @@ bool FileSystem::CreateDir(const std::string& path, bool is_recursive)
     std::filesystem::path relativePath = this->root;
     relativePath.append(path);
 
-	if (is_recursive)
+	if (isRecursive)
 	{
 		return std::filesystem::create_directories(relativePath);
 	}
@@ -216,7 +244,7 @@ bool FileSystem::RemoveFile(const std::string& filename)
 	return std::filesystem::remove(name);
 }
 
-bool FileSystem::RemoveDir(const std::string& path, bool is_recursive)
+bool FileSystem::RemoveDir(const std::string& path, bool isRecursive)
 {
 	if (!Exists(path))
 	{
@@ -226,7 +254,7 @@ bool FileSystem::RemoveDir(const std::string& path, bool is_recursive)
     std::filesystem::path relativePath = this->root;
     relativePath.append(path);
 
-	if (is_recursive)
+	if (isRecursive)
 	{
 		return std::filesystem::remove_all(relativePath) > 0;
 	}
@@ -243,16 +271,16 @@ void FileSystem::CopyFile(const std::string& from, const std::string& to)
 	std::filesystem::copy(relativeFrom, relativeTo, std::filesystem::copy_options::overwrite_existing);
 }
 
-void FileSystem::RenameFile(const std::string& dir, const std::string& old_name, const std::string& new_name)
+void FileSystem::RenameFile(const std::string& dir, const std::string& oldName, const std::string& newName)
 {
-	if (old_name.compare(new_name))
+	if (oldName.compare(newName))
 	{
 		try
 		{
             std::string relativePath = this->root.generic_string();
             relativePath.append(dir);
 
-			std::filesystem::rename(relativePath + old_name, relativePath + new_name);
+			std::filesystem::rename(relativePath + oldName, relativePath + newName);
 		}
 		catch (const std::filesystem::filesystem_error& e)
 		{
@@ -269,7 +297,7 @@ bool FileSystem::LoadBinary(const std::string& filename, std::vector<uint8_t>& d
 	std::ifstream file(name, std::ios::ate | std::ios::binary);
 	if (!file.is_open())
 	{
-        ENGINE_LOG_WARN("Failed to load binary file %s!", filename.c_str());
+        ENGINE_LOG_WARN("Failed to load binary file {}!", filename.c_str());
 		return false;
 	}
 
@@ -291,7 +319,7 @@ bool FileSystem::WriteString(const std::string& filename, const std::string& str
 	std::ofstream file(name);
 	if (!file.is_open())
 	{
-        ENGINE_LOG_WARN("Failed to write string file %s!", filename.c_str());
+        ENGINE_LOG_WARN("Failed to write string file {}!", filename.c_str());
 		return false;
 	}
 
@@ -309,7 +337,7 @@ bool FileSystem::LoadString(const std::string& filename, std::string& str)
 	std::ifstream file(name);
 	if (!file.is_open())
 	{
-        ENGINE_LOG_WARN("Failed to load string file %s!", filename.c_str());
+        ENGINE_LOG_WARN("Failed to load string file {}!", filename.c_str());
 		return false;
 	}
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Function/Render/RHI/VulkanRHI/VulkanRHIPool.h"
+#include "Function/Render/RHI/VulkanRHI/VulkanRHICache.h"
 #include "VulkanUtil.h"
 #include "VulkanRHIResource.h"
 #include "Function/Render/RHI/RHI.h"
@@ -23,7 +23,13 @@ public:
 
     VulkanRHIBackend(const RHIBackendInfo& info);
 
+    virtual void Tick() override final;
+
     virtual void Destroy() override final;
+
+    //ImGui ////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    virtual void InitImGui(GLFWwindow* window) override final;
 
     //基本资源 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -35,7 +41,7 @@ public:
 
     virtual RHICommandPoolRef CreateCommandPool(const RHICommandPoolInfo& info) override final;
 
-    virtual RHICommandContextRef CreateCommandContext(RHICommandPool* pool) override final;
+    virtual RHICommandContextRef CreateCommandContext(RHICommandPoolRef pool) override final;
 
     //缓冲，纹理 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -71,7 +77,7 @@ public:
 
     //立即模式的命令接口 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    virtual RHIImmediateCommandRef GetImmediateCommand() override final;
+    virtual RHICommandListImmediateRef GetImmediateCommand() override final;
 
 
 
@@ -120,14 +126,18 @@ private:
     VkDescriptorPool descriptorPool;
 
     // 池化的renderPass和frameBuffer
-    VkRenderPassPool renderPassPool;
-    VkFramebufferPool frameBufferPool;
+    VkRenderPassCache renderPassPool;
+    VkFramebufferCache frameBufferPool;
 
     // 立即模式命令队列
-    RHIImmediateCommandRef immediateCommand;
+    RHICommandContextImmediateRef immediateCommandContext;
+    RHICommandListImmediateRef immediateCommand;
 
     // 同步
     CriticalSectionRef sync;
+
+    // 是否已初始化ImGui，用于析构时释放资源
+    bool initImGui = false;
 
     void CreateInstance();
     void CreatePhysicalDevice();
@@ -144,7 +154,7 @@ private:
 class VulkanRHICommandContext : public RHICommandContext
 {        
 public:                
-    VulkanRHICommandContext(RHICommandPool* pool, const VulkanRHIBackend& backend);
+    VulkanRHICommandContext(RHICommandPoolRef pool, const VulkanRHIBackend& backend);
 
     virtual void Destroy() override final;
 
@@ -180,6 +190,8 @@ public:
 
     virtual void SetScissor(Offset2D min, Offset2D max) override final;
 
+    virtual void SetDepthBias(float constantBias, float slopeBias, float clampBias) override final;
+
     virtual void SetGraphicsPipeline(RHIGraphicsPipelineRef graphicsPipeline) override final;
 
     virtual void SetComputePipeline(RHIComputePipelineRef computePipeline) override final;	
@@ -204,7 +216,13 @@ public:
 
     virtual void DrawIndexedIndirect(RHIBufferRef argumentBuffer, uint32_t offset, uint32_t drawCount) override final;
 
-    VkCommandBuffer GetHandle() { return handle; }
+    //ImGui /////////////////////////////////////////////////////////////////////////////////////
+
+    virtual void ImGuiCreateFontsTexture() override final;
+
+    virtual void ImGuiRenderDrawData() override final;
+
+    const VkCommandBuffer& GetHandle() { return handle; }
 
 private:
     VkCommandBuffer handle;
@@ -219,10 +237,12 @@ private:
     VkPipelineBindPoint GetCuttentBindingPoint();
 };
 
-class VulkanRHIImmediateCommand : public RHIImmediateCommand 
+class VulkanRHICommandContextImmediate : public RHICommandContextImmediate 
 {
 public:
-    VulkanRHIImmediateCommand(VulkanRHIBackend& backend);
+    VulkanRHICommandContextImmediate(VulkanRHIBackend& backend);
+
+    virtual void Flush() override final;
 
     virtual void TextureBarrier(const RHITextureBarrier& barrier) override final;
 
@@ -245,4 +265,7 @@ private:
     RHIFenceRef fence;
     RHIQueueRef queue;
     RHICommandPoolRef commandPool;
+
+    VkCommandBuffer handle;
+    VkDevice device;
 };

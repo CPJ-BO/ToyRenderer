@@ -240,7 +240,7 @@ public:
 
 	VkPipelineLayout GetPipelineLayout() { return pipelineLayout; }
 
-	VkPipeline GetHandle() { return handle; }
+	const VkPipeline& GetHandle() { return handle; }
 
 	void Bind(VkCommandBuffer commandBuffer);
 
@@ -261,7 +261,7 @@ private:
         VK_DYNAMIC_STATE_SCISSOR,
 		VK_DYNAMIC_STATE_LINE_WIDTH,
 		VK_DYNAMIC_STATE_VERTEX_INPUT_EXT,
-		// VK_DYNAMIC_STATE_DEPTH_BIAS,
+		VK_DYNAMIC_STATE_DEPTH_BIAS,
         // VK_DYNAMIC_STATE_BLEND_CONSTANTS,
         // VK_DYNAMIC_STATE_DEPTH_BOUNDS,
         // VK_DYNAMIC_STATE_STENCIL_REFERENCE
@@ -288,7 +288,7 @@ public:
 
 	VkPipelineLayout GetPipelineLayout() { return pipelineLayout; }
 
-	VkPipeline GetHandle() { return handle; }
+	const VkPipeline& GetHandle() { return handle; }
 
 	void Bind(VkCommandBuffer commandBuffer);
 

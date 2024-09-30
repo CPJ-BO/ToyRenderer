@@ -6,6 +6,7 @@
 #include "Platform/HAL/PlatformProcess.h"
 
 #include <cstdint>
+#include <memory>
 #include <queue>
 #include <vector>
 
@@ -73,7 +74,7 @@ protected:
 	RHISwapchainInfo info;
 };
 
-class RHICommandPool : public RHIResource
+class RHICommandPool : public RHIResource, public std::enable_shared_from_this<RHICommandPool>
 {
 public:
 	RHICommandPool(const RHICommandPoolInfo& info)

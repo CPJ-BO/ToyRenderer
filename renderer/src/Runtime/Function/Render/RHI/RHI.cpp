@@ -40,8 +40,8 @@ void RHIBackend::Tick()
 
                 if(resource->lastUseTick > 6)  //析构资源6帧后销毁
                 {
-                    if(resource->GetType() != RHI_RENDER_PASS) 
-                        std::cout << "RHI resource [" << resource.get() << "] of type [" << resource->GetType() << "] destroied" << std::endl;
+                    // if(resource->GetType() != RHI_RENDER_PASS && backendInfo.enableDebug) 
+                    //     std::cout << "RHI resource [" << resource.get() << "] of type [" << resource->GetType() << "] destroied" << std::endl;
 
                     resource->Destroy();
                     resource = nullptr;
@@ -63,8 +63,8 @@ void RHIBackend::Destroy()
         {
             if(resource)
             {
-                if(resource->GetType() != RHI_RENDER_PASS) 
-                    std::cout << "RHI resource [" << resource.get() << "] of type [" << resource->GetType() << "] destroied" << std::endl;
+                // if(resource->GetType() != RHI_RENDER_PASS && backendInfo.enableDebug) 
+                //     std::cout << "RHI resource [" << resource.get() << "] of type [" << resource->GetType() << "] destroied" << std::endl;
 
                 resource->Destroy();
             }

@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "092ecae8-0f77-41c8-8ea3-a71be21d56f7"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Plot_Common_Ground_02_T4_Normal.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 1024,
+                    "height": 1024,
+                    "depth": 1
+                },
+                "mipLevels": 11,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

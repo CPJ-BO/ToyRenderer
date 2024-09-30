@@ -1,0 +1,35 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "../common/screen.glsl"
+
+layout(set = 0, binding = 0) uniform texture2D IN_COLOR[];
+layout(set = 0, binding = 1, rgba16f) uniform image2D OUT_COLOR;
+layout(set = 1, binding = 0) uniform sampler SAMPLER[];
+
+layout(push_constant) uniform bloom_setting {
+	int maxMip;
+	int mipLevel;
+	float stride;
+	float bias;
+	float accumulateIntencity;
+	float combineIntencity;
+} BLOOM_SETTING;
+
+#define THREAD_SIZE_X 16
+#define THREAD_SIZE_Y 16
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main()
+{
+    ivec2 pixel         = ivec2(gl_GlobalInvocationID.xy);									// 本级像素坐标
+    vec2 uv             = ScreenPixToUV(pixel, imageSize(OUT_COLOR));						// UV
+
+	vec4 originColor  	= texture(sampler2D(IN_COLOR[0], SAMPLER[0]), uv);
+	vec4 bloomColor		= texture(sampler2D(IN_COLOR[1], SAMPLER[0]), uv) * BLOOM_SETTING.combineIntencity;
+
+    imageStore(OUT_COLOR, pixel, originColor + bloomColor);
+}

@@ -3,6 +3,7 @@
 #include "Function/Global/EngineContext.h"
 #include "Function/Render/RHI/RHIStructs.h"
 #include "Function/Render/RenderResource/RenderResourceManager.h"
+#include "RenderStructs.h"
 
 #include <cstdint>
 #include <cstring>
@@ -14,17 +15,24 @@ RHIBackendRef GlobalRHIBackend()
     return EngineContext::RHI();
 }
 
+VertexBuffer::VertexBuffer()
+{
+    vertexID = EngineContext::RenderResource()->AllocateVertexID();
+}
+
 VertexBuffer::~VertexBuffer()
 {
     if(!EngineContext::Destroyed())
     {
-        if(positionID != 0)     EngineContext::RenderResource()->ReleaseBindlessID(positionID, BINDLESS_SLOT_POSITION);   
-        if(normalID != 0)       EngineContext::RenderResource()->ReleaseBindlessID(normalID, BINDLESS_SLOT_NORMAL);  
-        if(tangentID != 0)      EngineContext::RenderResource()->ReleaseBindlessID(tangentID, BINDLESS_SLOT_TANGENT);  
-        if(texCoordID != 0)     EngineContext::RenderResource()->ReleaseBindlessID(texCoordID, BINDLESS_SLOT_TEXCOORD);  
-        if(colorID != 0)        EngineContext::RenderResource()->ReleaseBindlessID(colorID, BINDLESS_SLOT_COLOR);  
-        if(boneIndexID != 0)    EngineContext::RenderResource()->ReleaseBindlessID(boneIndexID, BINDLESS_SLOT_BONE_INDEX); 
-        if(boneWeightID != 0)   EngineContext::RenderResource()->ReleaseBindlessID(boneWeightID, BINDLESS_SLOT_BONE_WEIGHT);   
+        if(vertexInfo.positionID != 0)     EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.positionID, BINDLESS_SLOT_POSITION);   
+        if(vertexInfo.normalID != 0)       EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.normalID, BINDLESS_SLOT_NORMAL);  
+        if(vertexInfo.tangentID != 0)      EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.tangentID, BINDLESS_SLOT_TANGENT);  
+        if(vertexInfo.texCoordID != 0)     EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.texCoordID, BINDLESS_SLOT_TEXCOORD);  
+        if(vertexInfo.colorID != 0)        EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.colorID, BINDLESS_SLOT_COLOR);  
+        if(vertexInfo.boneIndexID != 0)    EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.boneIndexID, BINDLESS_SLOT_BONE_INDEX); 
+        if(vertexInfo.boneWeightID != 0)   EngineContext::RenderResource()->ReleaseBindlessID(vertexInfo.boneWeightID, BINDLESS_SLOT_BONE_WEIGHT);   
+
+        if(vertexID != 0)       EngineContext::RenderResource()->ReleaseVertexID(vertexID);
     }
 }
 
@@ -59,8 +67,8 @@ void VertexBuffer::SetBufferData(void* data, uint32_t size, RHIBufferRef& buffer
     memcpy(buffer->Map(), data, size);
     // buffer->UnMap();
     // EngineContext::RHI()->GetImmediateCommand()->CopyBuffer(stagingBuffer, 0, buffer, 0, size);
-    EngineContext::RHI()->GetImmediateCommand()->BufferBarrier(
-        {buffer, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_VERTEX_BUFFER});
+
+    EngineContext::RenderResource()->SetVertexInfo(vertexInfo, vertexID);   // 最后还要更新vertexStream的信息
 }
 
 void VertexBuffer::SetPosition(const std::vector<Vec3>& position)
@@ -69,7 +77,7 @@ void VertexBuffer::SetPosition(const std::vector<Vec3>& position)
         (void*)position.data(), 
         position.size() * sizeof(Vec3),
         positionBuffer, 
-        positionID, 
+        vertexInfo.positionID, 
         BINDLESS_SLOT_POSITION);
     
     vertexNum = position.size();    // 存一下当前的顶点数目，以position为基准
@@ -81,7 +89,7 @@ void VertexBuffer::SetNormal(const std::vector<Vec3>& normal)
         (void*)normal.data(), 
         normal.size() * sizeof(Vec3),
         normalBuffer, 
-        normalID, 
+        vertexInfo.normalID, 
         BINDLESS_SLOT_NORMAL);
 }
 
@@ -91,7 +99,7 @@ void VertexBuffer::SetTangent(const std::vector<Vec4>& tangent)
         (void*)tangent.data(), 
         tangent.size() * sizeof(Vec4),
         tangentBuffer, 
-        tangentID, 
+        vertexInfo.tangentID, 
         BINDLESS_SLOT_TANGENT);
 }
 
@@ -101,7 +109,7 @@ void VertexBuffer::SetTexCoord(const std::vector<Vec2>& texCoord)
         (void*)texCoord.data(), 
         texCoord.size() * sizeof(Vec2),
         texCoordBuffer, 
-        texCoordID, 
+        vertexInfo.texCoordID, 
         BINDLESS_SLOT_TEXCOORD);
 }
 
@@ -111,7 +119,7 @@ void VertexBuffer::SetColor(const std::vector<Vec3>& color)
         (void*)color.data(), 
         color.size() * sizeof(Vec3),
         colorBuffer, 
-        colorID, 
+        vertexInfo.colorID, 
         BINDLESS_SLOT_COLOR);
 }
 
@@ -121,7 +129,7 @@ void VertexBuffer::SetBoneIndex(const std::vector<IVec4>& boneIndex)
         (void*)boneIndex.data(), 
         boneIndex.size() * sizeof(IVec4),
         boneIndexBuffer, 
-        boneIndexID, 
+        vertexInfo.boneIndexID, 
         BINDLESS_SLOT_BONE_INDEX);
 }
 
@@ -131,7 +139,7 @@ void VertexBuffer::SetBoneWeight(const std::vector<Vec4>& boneWeight)
         (void*)boneWeight.data(), 
         boneWeight.size() * sizeof(Vec4),
         boneWeightBuffer, 
-        boneWeightID, 
+        vertexInfo.boneWeightID, 
         BINDLESS_SLOT_BONE_WEIGHT);
 }
 
@@ -165,7 +173,5 @@ void IndexBuffer::SetIndex(const std::vector<uint32_t>& index)
 
     memcpy(buffer->Map(), index.data(), size);
     //buffer->UnMap();
-    EngineContext::RHI()->GetImmediateCommand()->BufferBarrier(
-        {buffer, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_INDEX_BUFFER});
 }
 

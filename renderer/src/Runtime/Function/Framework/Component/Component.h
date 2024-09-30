@@ -3,6 +3,7 @@
 #include "Core/Serialize/Serializable.h"
 
 #include <memory>
+#include <string>
 
 class Entity;
 
@@ -10,15 +11,12 @@ enum ComponentType
 {
 	UNDEFINED_COMPONENT = 0,
 
-	ANIMATOR_COMPONENT,
-	CAMERA_COMPONENT,
-	DIRECTIONAL_LIGHT_COMPONENT,
-	MESH_COMPONENT,
-	MESH_RENDERER_COMPONENT,
-	POINT_LIGHT_COMPONENT,
-	SKYBOX_COMPONENT,
 	TRANSFORM_COMPONENT,
-	VOLUME_LIGHT_COMPONENT,
+	CAMERA_COMPONENT,
+	POINT_LIGHT_COMPONENT,
+	DIRECTIONAL_LIGHT_COMPONENT,
+	MESH_RENDERER_COMPONENT,
+	SKYBOX_COMPONENT,
 
 	COMPONENT_TYPE_MAX_ENUM, //
 };
@@ -29,12 +27,14 @@ public:
 	Component() = default;
 	virtual ~Component() {};
 
-	virtual void Init() = 0;
-	virtual void Tick(float deltaTime) = 0;
+	virtual void Load() {};						// 文件操作接口，负责序列化时加载和存储
 	virtual void Save() {};
+	virtual void Init() { init = true; };		// 循环接口，执行功能逻辑，Init保证在Tick之前一定会被执行一次
+	virtual void Tick(float deltaTime) = 0;
 
+	virtual std::string GetTypeName()			{ return "Undefined"; }
 	virtual ComponentType GetType()				{ return UNDEFINED_COMPONENT; }
-	inline std::weak_ptr<Entity> GetEntity()	{ return entity; }
+	inline std::shared_ptr<Entity> GetEntity()	{ return entity.lock(); }
 
 	template<typename TComponent>
     std::shared_ptr<TComponent> TryGetComponent();
@@ -42,7 +42,8 @@ public:
 	template<typename TComponent>
     std::shared_ptr<TComponent> TryGetComponentInParent(bool self = false);
 
-protected:
+private:
+	bool init = false;
 	std::weak_ptr<Entity> entity;	 
 	friend class Entity;
 
@@ -51,4 +52,6 @@ private:
     EndSerailize
 };
 
+#define EnableComponentEditourUI() \
+friend class ComponentWidget;
 

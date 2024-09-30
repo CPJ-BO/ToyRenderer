@@ -1,0 +1,43 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Model",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "84a944b1-ef4d-41ce-a3eb-e4ccf3bfd2cc"
+                    }
+                },
+                "AssetBinder": {
+                    "assetMap": [
+                        {
+                            "key": "cache",
+                            "value": {
+                                "str": "00000000-0000-0000-0000-000000000000"
+                            }
+                        }
+                    ],
+                    "assetArrayMap": [
+                        {
+                            "key": "materials",
+                            "value": []
+                        }
+                    ]
+                },
+                "path": "Asset/BuildIn/Model/Basic/stanford_bunny.obj",
+                "processSetting": {
+                    "smoothNormal": true,
+                    "flipUV": false,
+                    "loadMaterials": false,
+                    "tangentSpace": true,
+                    "generateBVH": false,
+                    "generateCluster": false,
+                    "generateVirtualMesh": true,
+                    "cacheCluster": false
+                }
+            }
+        }
+    }
+}

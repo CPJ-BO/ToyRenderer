@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "5864e7e6-4211-44bd-95e8-97dae2c293f5"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Build_MS_Tsg_02_Diffuse.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 2048,
+                    "height": 2048,
+                    "depth": 1
+                },
+                "mipLevels": 12,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

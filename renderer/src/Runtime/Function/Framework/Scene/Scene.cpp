@@ -12,6 +12,7 @@ void Scene::OnLoadAsset()
 {
     for(auto& entity : entities) 
     {
+        entity->Load();
         entity->Init();
     }
 }
@@ -52,6 +53,7 @@ std::shared_ptr<Entity> Scene::CreateEntity(std::string name)
     std::shared_ptr<Entity> entity = std::make_shared<Entity>();
     entity->name = name;
     entity->id = idAlloctor.Allocate();
+    entity->scene = weak_from_this();
     entity->AddComponent<TransformComponent>();     // 默认添加一个transform组件
 
     entities.push_back(entity);
@@ -67,6 +69,7 @@ bool Scene::AddEntity(std::shared_ptr<Entity> entity)
     }
 
     entity->id = idAlloctor.Allocate();    // 重新分配ID
+    entity->scene = weak_from_this();
     entities.push_back(entity);
     return true;
 }
@@ -107,6 +110,26 @@ std::shared_ptr<CameraComponent> Scene::GetActiveCamera()   // TODO 暂时做成
     {
         std::shared_ptr<CameraComponent> camera = entity->TryGetComponent<CameraComponent>();
         if(camera) return camera;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<SkyboxComponent> Scene::GetSkyBox() // TODO 暂时做成找第一个
+{
+    for(auto& entity : entities)
+    {
+        std::shared_ptr<SkyboxComponent> skybox = entity->TryGetComponent<SkyboxComponent>();
+        if(skybox) return skybox;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<DirectionalLightComponent> Scene::GetDirectionalLight() // TODO 暂时做成找第一个
+{
+    for(auto& entity : entities)
+    {
+        std::shared_ptr<DirectionalLightComponent> directionalLight = entity->TryGetComponent<DirectionalLightComponent>();
+        if(directionalLight) return directionalLight;
     }
     return nullptr;
 }

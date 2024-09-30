@@ -1,0 +1,83 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../common/common.glsl"
+
+#define THREAD_SIZE_X LIGHT_CLUSTER_WIDTH
+#define THREAD_SIZE_Y LIGHT_CLUSTER_HEIGHT
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main() 
+{
+	uvec3 gID = gl_GlobalInvocationID.xyz;
+
+	// if(gID.x == 0 && gID.y == 0 && gID.z == 0) LIGHTS.lightSetting.globalIndexOffset = 0;
+	// barrier();
+
+	//计算包围盒（其实可以只做一次）//////////////////////////////////////////////////////////////////////////////////////
+
+	// cluster的远近平面
+	vec4 nearPlane;
+	vec4 farPlane;
+
+	nearPlane.xyz 	= vec3(0.0f, 0.0f, -1.0f);  
+	nearPlane.w 	= CAMERA.near * pow(CAMERA.far / CAMERA.near, float(gID.z) / LIGHT_CLUSTER_DEPTH);	//对数划分
+	//nearPlane.w 	= (CAMERA.far - CAMERA.near) / LIGHT_CLUSTER_DEPTH * float(gID.z) + CAMERA.near;		//均匀划分
+
+	farPlane.xyz 	= vec3(0.0f, 0.0f, -1.0f); 
+	farPlane.w 	    = CAMERA.near * pow(CAMERA.far / CAMERA.near, float(gID.z + 1) / LIGHT_CLUSTER_DEPTH);
+	//farPlane.w 	= (CAMERA.far - CAMERA.near) / LIGHT_CLUSTER_DEPTH * float(gID.z + 1) + CAMERA.near;
+
+	// cluster在屏幕空间的两角坐标，转到view space
+	vec2 screenMin = (gID.xy * LIGHT_CLUSTER_GRID_SIZE) / vec2(WINDOW_WIDTH, WINDOW_HEIGHT);
+	vec2 screenMax = ((gID.xy + uvec2(1)) * LIGHT_CLUSTER_GRID_SIZE) / vec2(WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	vec4 viewMin = ScreenToView(screenMin, 1.0f);
+	vec4 viewMax = ScreenToView(screenMax, 1.0f);
+
+	// 计算view space下的四个边
+	vec3 nearMin, nearMax, farMin, farMax;
+	vec3 eye = vec3(0, 0, 0);
+	LineIntersectPlane(eye, viewMin.xyz, nearPlane, nearMin);
+	LineIntersectPlane(eye, viewMax.xyz, nearPlane, nearMax);
+	LineIntersectPlane(eye, viewMin.xyz, farPlane, farMin);
+	LineIntersectPlane(eye, viewMax.xyz, farPlane, farMax);
+
+	// view space的包围盒
+	BoundingBox box;
+	box.max_bound = max(nearMin, max(nearMax, max(farMin, farMax)));
+	box.min_bound = min(nearMin, min(nearMax, min(farMin, farMax)));
+
+	//光源剔除////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	// 每个cluster先存下所有可能的光照索引，再合并到全局的lightIndex
+	uint lightIDs[MAX_LIGHTS_PER_CLUSTER];
+	uint offset = 0;
+
+	for(int i = 0; i < LIGHTS.lightSetting.pointLightCnt; i++)
+	{
+		uint lightID = LIGHTS.lightSetting.pointLightIDs[i];
+		PointLight pointLight = LIGHTS.pointLights[lightID];
+		if(!pointLight.enable) continue;
+
+		BoundingSphere view_sphere = SphereTransform(pointLight.sphere, CAMERA.view);
+
+		if(BoxIntersectSphere(box, view_sphere) && offset < MAX_LIGHTS_PER_CLUSTER) 
+		{
+			lightIDs[offset++] = lightID;
+		}
+	}
+
+	// 合并
+	uint base_offset = atomicAdd(LIGHTS.lightSetting.globalIndexOffset, offset);
+	for(int i = 0; i < offset ; i++)
+	{
+		LIGHT_CLUSTER_INDEX.slot[base_offset + i].lightID = lightIDs[i];
+	}
+	imageStore(LIGHT_CLUSTER_GRID, ivec3(gID.xyz), uvec4( base_offset, offset, 0, 0 ) );
+}
+
+
+

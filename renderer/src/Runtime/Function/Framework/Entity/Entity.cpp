@@ -4,19 +4,11 @@
 
 #include <memory>
 
-void Entity::Init()
+void Entity::Load()
 {
     for (auto& component : components)
     {
-        component->Init();
-    }
-}
-
-void Entity::Tick(float deltaTime)
-{
-    for (auto& component : components)
-    {
-        component->Tick(deltaTime);
+        component->Load();
     }
 }
 
@@ -25,6 +17,23 @@ void Entity::Save()
     for (auto& component : components)
     {
         component->Save();
+    }
+}
+
+void Entity::Init()
+{
+    for (auto& component : components)
+    {
+        if(!component->init) component->Init();
+    }
+}
+
+void Entity::Tick(float deltaTime)
+{
+    for (auto& component : components)
+    {
+        if(!component->init) component->Init(); // 保证已经初始化
+        component->Tick(deltaTime);
     }
 }
 

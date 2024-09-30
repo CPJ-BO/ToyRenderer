@@ -9,10 +9,10 @@ IndexAlloctor::IndexAlloctor(uint32_t maxIndex)
 
 uint32_t IndexAlloctor::Allocate()
 {
-    return AllocateRange(1).begin;
+    return Allocate(1).begin;
 }
 
-IndexRange IndexAlloctor::AllocateRange(uint32_t size)
+IndexRange IndexAlloctor::Allocate(uint32_t size)
 {
     for(auto iter = unusedIndex.begin(); iter != unusedIndex.end(); iter++)
     {
@@ -38,10 +38,10 @@ IndexRange IndexAlloctor::AllocateRange(uint32_t size)
 
 void IndexAlloctor::Release(uint32_t index)
 {
-    ReleaseRange({index, 1});
+    Release({index, 1});
 }
 
-void IndexAlloctor::ReleaseRange(IndexRange range)
+void IndexAlloctor::Release(IndexRange range)
 {
     uint32_t end = range.begin + range.size;
 

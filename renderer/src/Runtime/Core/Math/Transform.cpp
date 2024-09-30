@@ -1,5 +1,6 @@
 #include "Transform.h"
 #include "Core/Math/Math.h"
+#include <cmath>
 
 Transform::Transform(Mat4 matrix)
 {
@@ -46,4 +47,34 @@ void Transform::UpdateVector()
     // std::cout << front.transpose() << " | " << up.transpose() << " | " << right.transpose() << std::endl;
 }
 
+void Transform::SetRotation(Quaternion rotation)   
+{ 
+    this->rotation = rotation.normalized(); 
+    this->eulerAngle = Math::ToEulerAngle(this->rotation); 
+    UpdateVector();
+} 
 
+void Transform::SetRotation(Vec3 eulerAngle) // 不检查y范围有效性
+{ 
+    this->eulerAngle = eulerAngle;
+    this->rotation = Math::ToQuaternion(eulerAngle).normalized(); 
+    UpdateVector();
+}
+
+Vec3 Transform::Translate(Vec3 translation)        
+{ 
+    this->position += translation; 
+    return this->position; 
+}
+
+Vec3 Transform::Scale(Vec3 scale)                  
+{ 
+    this->scale = this->scale.array() * scale.array(); 
+    return this->scale; 
+}
+
+Vec3 Transform::Rotate(Vec3 angle)                 
+{ 
+    SetRotation(this->eulerAngle + angle);
+    return this->eulerAngle;
+}

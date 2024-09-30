@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "647215c8-6d20-4c9a-a0d5-a5b3937e4a8d"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Stone_Common_01_T4_Diffuse.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 2048,
+                    "height": 2048,
+                    "depth": 1
+                },
+                "mipLevels": 12,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

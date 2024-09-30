@@ -1,0 +1,201 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "../common/screen.glsl"
+
+layout(set = 0, binding = 0)            uniform texture2D IN_COLOR;	    // texture2D 是SRV
+layout(set = 0, binding = 1, rgba16f)   uniform image2D OUT_COLOR;      // image2D   是UAV
+layout(set = 1, binding = 0)            uniform sampler SAMPLER[];
+
+layout(push_constant) uniform FXAASetting {
+    uint enable;
+} SETTING;
+
+/* pixel index in 3*3 kernel
+    +---+---+---+
+    | 0 | 1 | 2 |
+    +---+---+---+
+    | 3 | 4 | 5 |
+    +---+---+---+
+    | 6 | 7 | 8 |
+    +---+---+---+
+*/
+#define UP_LEFT      0
+#define UP           1
+#define UP_RIGHT     2
+#define LEFT         3
+#define CENTER       4
+#define RIGHT        5
+#define DOWN_LEFT    6
+#define DOWN         7
+#define DOWN_RIGHT   8
+vec2 KERNEL_STEP_MAT[] = vec2[9](
+    vec2(-1.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 1.0),
+    vec2(-1.0, 0.0), vec2(0.0, 0.0), vec2(1.0, 0.0),
+    vec2(-1.0, -1.0), vec2(0.0, -1.0), vec2(1.0, -1.0)
+);
+
+/* in order to accelerate exploring along tangent bidirectional, step by an increasing amount of pixels QUALITY(i) 
+   the max step count is 12
+    +-----------------+---+---+---+---+---+---+---+---+---+---+---+---+
+    |step index       | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |10 |11 |
+    +-----------------+---+---+---+---+---+---+---+---+---+---+---+---+
+    |step pixels count|1.0|1.0|1.0|1.0|1.0|1.5|2.0|2.0|2.0|2.0|4.0|8.0|
+    +-----------------+---+---+---+---+---+---+---+---+---+---+---+---+
+*/
+#define STEP_COUNT_MAX   12
+float QUALITY(int i) {
+    if (i < 5) return 1.0;
+    if (i == 5) return 1.5;
+    if (i < 10) return 2.0;
+    if (i == 10) return 4.0;
+    if (i == 11) return 8.0;
+}
+
+// L = 0.299 * R + 0.587 * G + 0.114 * B
+float RGB2LUMA(vec3 color) {
+    return dot(vec3(0.299, 0.578, 0.114), color);
+}
+
+#define EDGE_THRESHOLD_MIN  0.0312
+#define EDGE_THRESHOLD_MAX  0.125
+#define SUBPIXEL_QUALITY    0.75
+#define GRADIENT_SCALE      0.25
+
+#define THREAD_SIZE_X 16
+#define THREAD_SIZE_Y 16
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main()
+{
+    ivec2 pixel         = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 screenSize    = textureSize(IN_COLOR, 0);
+    vec2 stepUV         = vec2(1.0f / float(screenSize.x), 1.0f / float(screenSize.y));
+    vec2 inUV           = ScreenPixToUV(pixel, screenSize);
+
+    if(SETTING.enable > 0)
+    {
+        float lumaMat[9];
+        for (int i = 0; i < 9; i++) {
+            lumaMat[i] = RGB2LUMA(texture(sampler2D(IN_COLOR, SAMPLER[0]), inUV + stepUV * KERNEL_STEP_MAT[i]).xyz);
+        }
+
+        // 用四像素的亮度做阈值检测，低于阈值的直接返回
+        // detecting where to apply FXAA, return the pixel color if not
+        float lumaMin = min(lumaMat[CENTER], min(min(lumaMat[UP], lumaMat[DOWN]), min(lumaMat[LEFT], lumaMat[RIGHT])));
+        float lumaMax = max(lumaMat[CENTER], max(max(lumaMat[UP], lumaMat[DOWN]), max(lumaMat[LEFT], lumaMat[RIGHT])));
+        float lumaRange = lumaMax - lumaMin;
+        if(lumaRange < max(EDGE_THRESHOLD_MIN, lumaMax * EDGE_THRESHOLD_MAX)) {
+            vec4 outColor = texture(sampler2D(IN_COLOR, SAMPLER[0]), inUV);
+            imageStore(OUT_COLOR, pixel, outColor);
+            return;
+        }
+
+        // 计算水平和垂直的变化幅度，取大的一边做为边界方向
+        // choosing edge tangent
+        // horizontal: |(upleft-left)-(left-downleft)|+2*|(up-center)-(center-down)|+|(upright-right)-(right-downright)|
+        // vertical: |(upright-up)-(up-upleft)|+2*|(right-center)-(center-left)|+|(downright-down)-(down-downleft)|
+        float lumaHorizontal = 
+            abs(lumaMat[UP_LEFT] + lumaMat[DOWN_LEFT] - 2.0 * lumaMat[LEFT])
+            + 2.0 * abs(lumaMat[UP] + lumaMat[DOWN] - 2.0 * lumaMat[CENTER])
+            + abs(lumaMat[UP_RIGHT] + lumaMat[DOWN_RIGHT] - 2.0 * lumaMat[RIGHT]);
+        float lumaVertical = 
+            abs(lumaMat[UP_LEFT] + lumaMat[UP_RIGHT] - 2.0 * lumaMat[UP])
+            + 2.0 * abs(lumaMat[LEFT] + lumaMat[RIGHT] - 2.0 * lumaMat[CENTER])
+            + abs(lumaMat[DOWN_LEFT] + lumaMat[DOWN_RIGHT] - 2.0 * lumaMat[DOWN]);
+        bool isHorizontal = lumaHorizontal > lumaVertical;
+
+        // 计算垂直边缘方向的变化梯度，isDownLeft为符号
+        // choosing edge normal 
+        float gradientDownLeft = (isHorizontal ? lumaMat[DOWN] : lumaMat[LEFT]) - lumaMat[CENTER];
+        float gradientUpRight = (isHorizontal ? lumaMat[UP] : lumaMat[RIGHT]) - lumaMat[CENTER];
+        bool isDownLeft = abs(gradientDownLeft) > abs(gradientUpRight);
+
+        // 计算搜索步长，tangent为平行边缘方向，normal为垂直边缘方向
+        // get the tangent uv step vector and the normal uv step vector
+        vec2 tangentStep = (isHorizontal ? vec2(1.0, 0.0) : vec2(0.0, 1.0)) * stepUV;
+        vec2 normalStep =  (isDownLeft ? -1.0 : 1.0) * (isHorizontal ? vec2(0.0, 1.0) : vec2(1.0, 0.0)) * stepUV;
+
+        // get the change rate of gradient in normal per pixel
+        float gradient = isDownLeft ? gradientDownLeft : gradientUpRight;
+
+        // start at middle point of tangent edge
+        vec2 startUV = inUV + 0.5 * normalStep;
+        float lumaAverageStart = lumaMat[CENTER] + 0.5 * gradient;    
+        //return vec4(lumaAverageStart, lumaAverageStart,lumaAverageStart, 1.0);
+
+        // 沿边缘方向开始搜索，在纹素的边界处采样，利用双线性插值
+        // 将搜索值与起始像素平均值比较，超过阈值说明检测到边界
+        // explore along tangent bidirectional until reach the edge both
+        vec2 posUV = startUV + tangentStep;
+        vec2 negUV = startUV - tangentStep;
+
+        float deltaLumaPos = RGB2LUMA(texture(sampler2D(IN_COLOR, SAMPLER[0]), posUV).rgb) - lumaAverageStart;
+        float deltaLumaNeg = RGB2LUMA(texture(sampler2D(IN_COLOR, SAMPLER[0]), negUV).rgb) - lumaAverageStart;
+
+        bool reachedPos = abs(deltaLumaPos) > GRADIENT_SCALE * abs(gradient);
+        bool reachedNeg = abs(deltaLumaNeg) > GRADIENT_SCALE * abs(gradient);
+        bool reachedBoth = reachedPos && reachedNeg;
+
+        if (!reachedPos) posUV += tangentStep;
+        if (!reachedNeg) negUV -= tangentStep;
+
+        if (!reachedBoth) {
+            for(int i = 2; i < STEP_COUNT_MAX; i++){
+                if(!reachedPos) deltaLumaPos = RGB2LUMA(texture(sampler2D(IN_COLOR, SAMPLER[0]), posUV).rgb) - lumaAverageStart;
+                if(!reachedNeg) deltaLumaNeg = RGB2LUMA(texture(sampler2D(IN_COLOR, SAMPLER[0]), negUV).rgb) - lumaAverageStart;
+
+                bool reachedPos = abs(deltaLumaPos) > GRADIENT_SCALE * abs(gradient);
+                bool reachedNeg = abs(deltaLumaNeg) > GRADIENT_SCALE * abs(gradient);
+                bool reachedBoth = reachedPos && reachedNeg;
+
+                if (!reachedPos) posUV += (QUALITY(i) * tangentStep);
+                if (!reachedNeg) negUV -= (QUALITY(i) * tangentStep);
+
+                if (reachedBoth) break;
+            }
+        }
+
+        // 计算混合使用的偏移值（据边缘的较短长度 / 整边缘长度）（检测到的边缘越长，越不需要混合）
+        // estimating offset
+        float lengthPos = max(abs(posUV - startUV).x, abs(posUV - startUV).y);
+        float lengthNeg = max(abs(negUV - startUV).x, abs(negUV - startUV).y);
+        bool isPosNear = lengthPos < lengthNeg;
+
+        float pixelOffset = -1.0 * (isPosNear ? lengthPos : lengthNeg) / (lengthPos + lengthNeg) + 0.5;
+
+        // 边缘过长就不偏移了
+        // no offset if the bidirectional point is too far
+        if(((isPosNear ? deltaLumaPos : deltaLumaNeg) < 0.0) == (lumaMat[CENTER] < lumaAverageStart)) pixelOffset = 0.0;
+
+        // 亚像素检测？
+        // subpixel antialiasing
+        float lumaAverageCenter = 0.0;
+        float average_weight_mat[] = float[9](
+            1.0, 2.0, 1.0,
+            2.0, 0.0, 2.0,
+            1.0, 2.0, 1.0
+        );
+        for (int i = 0; i < 9; i++) lumaAverageCenter += average_weight_mat[i] * lumaMat[i];
+        lumaAverageCenter /= 12.0;
+
+        float subpixelLumaRange = clamp(abs(lumaAverageCenter - lumaMat[CENTER]) / lumaRange, 0.0, 1.0);
+        float subpixelOffset = (-2.0 * subpixelLumaRange + 3.0) * subpixelLumaRange * subpixelLumaRange;
+        subpixelOffset = subpixelOffset * subpixelOffset * SUBPIXEL_QUALITY;
+
+        // use the max offset between subpixel offset with before
+        pixelOffset = max(pixelOffset, subpixelOffset);
+
+        // 沿垂直边缘方向做偏移混合
+        vec4 outColor = texture(sampler2D(IN_COLOR, SAMPLER[0]), inUV + pixelOffset * normalStep);
+        imageStore(OUT_COLOR, pixel, outColor);
+    }
+    else
+    {
+        vec4 outColor = texture(sampler2D(IN_COLOR, SAMPLER[0]), inUV);
+        imageStore(OUT_COLOR, pixel, outColor);
+    }
+}

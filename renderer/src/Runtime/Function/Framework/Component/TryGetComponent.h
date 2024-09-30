@@ -10,6 +10,7 @@ std::shared_ptr<TComponent> Component::TryGetComponent()
     {
         return entity->TryGetComponent<TComponent>();
     }
+    return nullptr;
 }
 
 template<typename TComponent>
@@ -20,4 +21,5 @@ std::shared_ptr<TComponent> Component::TryGetComponentInParent(bool self)
     {
         return entity->TryGetComponentInParent<TComponent>(self);
     }
+    return nullptr;
 }

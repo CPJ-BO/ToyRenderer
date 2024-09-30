@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Serialize/Serializable.h"
 #include "Math.h"
 
 //AABB和视锥剔除参照Picolo
@@ -11,6 +12,7 @@ public:
     ~AxisAlignedBox() {};
 
     void Merge(const Vec3& newPoint);
+    void Merge(const AxisAlignedBox& other);
     void Update(const Vec3& center, const Vec3& halfExtent);
 
     inline Vec3 GetCenter() const      { return center; }
@@ -23,6 +25,14 @@ private:
     Vec3 halfExtent = Vec3::Zero();
     Vec3 maxCorner = Vec3::Constant(std::numeric_limits<float>::max());
     Vec3 minCorner = Vec3::Constant(std::numeric_limits<float>::min());
+
+private:
+    BeginSerailize()
+    SerailizeEntry(center)
+    SerailizeEntry(halfExtent)
+    SerailizeEntry(maxCorner)
+    SerailizeEntry(minCorner)
+    EndSerailize
 };
 
 struct Frustum
@@ -38,7 +48,10 @@ struct Frustum
 struct BoundingBox
 {
     Vec3 maxBound = Vec3::Constant(std::numeric_limits<float>::max());
+    float _padding0 = 0.0f;     // GPU端的内存对齐
+
     Vec3 minBound = Vec3::Constant(std::numeric_limits<float>::min());
+    float _padding1 = 0.0f;
 
     BoundingBox() {}
 
@@ -72,6 +85,12 @@ struct BoundingBox
         minBound = point.cwiseMin(minBound).array().floor();
         maxBound = point.cwiseMax(maxBound).array().ceil();
     }
+
+private:
+    BeginSerailize()
+    SerailizeEntry(maxBound)
+    SerailizeEntry(minBound)
+    EndSerailize
 };
 
 struct BoundingSphere
@@ -96,6 +115,12 @@ struct BoundingSphere
     BoundingSphere(const AxisAlignedBox& box);
 
     BoundingSphere operator+(const BoundingSphere& other);
+
+private:
+    BeginSerailize()
+    SerailizeEntry(center)
+    SerailizeEntry(radius)
+    EndSerailize
 };
 
 Frustum CreateFrustumFromMatrix(Mat4 mat,

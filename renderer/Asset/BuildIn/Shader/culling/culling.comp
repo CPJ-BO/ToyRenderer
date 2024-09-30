@@ -1,0 +1,232 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../common/common.glsl"
+
+struct RHIIndexedIndirectCommand 
+{
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+struct RHIIndirectCommand 
+{
+    uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    uint firstInstance;
+};
+
+struct IndirectSetting
+{
+    uint processSize;              
+    uint pipelineStateSize;        
+    uint _padding0[2];
+
+    uint drawSize;                
+    uint frustumCull;             
+    uint occlusionCull;          
+    uint _padding1;
+};
+
+struct IndirectMeshDrawInfo
+{
+    uint objectID;			      
+    uint commandID;				   
+};
+
+struct IndirectClusterDrawInfo
+{
+    uint objectID;                 
+    uint clusterID;              
+    uint commandID;				    
+    uint _padding;
+};
+
+struct IndirectClusterGroupDrawInfo 
+{
+    uint objectID;                 
+    uint clusterGroupID;           
+    uint commandID;				    
+    uint _padding;
+};
+
+layout(set = 1, binding = 0) buffer IndirectMeshDrawDatas { 
+
+    IndirectSetting setting;
+    IndirectMeshDrawInfo draws[MAX_PER_FRAME_OBJECT_SIZE];	
+
+} MESH_DRAW_DATAS[];
+
+layout(set = 1, binding = 1) buffer IndirectMeshDrawCommands { 
+
+    RHIIndirectCommand commands[MAX_PER_FRAME_OBJECT_SIZE];
+
+} MESH_DRAW_COMMANDS[];
+
+layout(set = 1, binding = 2) buffer IndirectClusterDrawDatas { 
+
+    IndirectSetting setting;
+    IndirectClusterDrawInfo draws[MAX_PER_FRAME_CLUSTER_SIZE];
+
+} CLUSTER_DRAW_DATAS[];
+
+layout(set = 1, binding = 3) buffer IndirectClusterDrawCommands			           
+{
+    RHIIndirectCommand command[MAX_PER_PASS_PIPELINE_STATE_COUNT];	 
+                                                        
+} CLUSTER_DRAW_COMMANDS[];
+
+layout(set = 1, binding = 4) buffer IndirectClusterGroupDrawDatas
+{
+    IndirectSetting setting;
+    IndirectClusterGroupDrawInfo draws[MAX_PER_FRAME_CLUSTER_GROUP_SIZE];
+		    
+} CLUSTER_GROUP_DRAW_DATAS[];
+
+layout(set = 1, binding = 5) buffer CullingSetting
+{
+	uint processSize;
+	uint _padding[3];
+
+	uint passType [MAX_SUPPORTED_MESH_PASS_COUNT];
+	uint passOffset [MAX_SUPPORTED_MESH_PASS_COUNT];
+};
+
+layout(push_constant) uniform cull_lod_setting {
+    float lodErrorRate;
+	float lodErrorOffset;
+}CULL_LOD_SETTING;
+
+#define DEPTH_PASS_INDEX 0
+#define POINT_SHADOW_PASS_INDEX 1
+#define DIRECTIONAL_SHADOW_PASS_INDEX 2
+#define G_BUFFER_PASS_INDEX 3
+#define FORWARD_PASS_INDEX 4
+#define TRANSPARENT_PASS_INDEX 5
+
+bool CheckLOD(BoundingSphere sphere, float error)
+{
+	float dist = max(length(sphere.center_radius.xyz) - sphere.center_radius.w, 0.0f);
+
+    return CULL_LOD_SETTING.lodErrorRate * dist + CULL_LOD_SETTING.lodErrorOffset >= error;
+}
+
+#define THREAD_SIZE_X 256
+#define THREAD_SIZE_Y 1
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main() 
+{
+	uint gID = gl_GlobalInvocationID.x;
+
+	// 逐物体剔除
+	for(int i = 0; i < processSize; i++)
+	{
+		if(gID < MESH_DRAW_DATAS[i].setting.processSize)
+		{
+			IndirectMeshDrawInfo meshInfo = MESH_DRAW_DATAS[i].draws[gID];
+			Object object = OBJECTS.slot[meshInfo.objectID];
+			
+			BoundingSphere world_sphere = SphereTransform(object.sphere, object.model);	//世界空间的包围球包围盒
+			BoundingBox world_box = BoundingBoxTransform(object.box, object.model);
+
+			bool visible = true;			//整体可见性
+			bool frustum_visible = true;	//视锥剔除可见性
+			bool occlusion_visible = true;	//遮蔽剔除可见性
+
+			// 屏幕空间绘制
+			if(	passType[i] == DEPTH_PASS_INDEX ||
+				passType[i] == G_BUFFER_PASS_INDEX ||
+				passType[i] == FORWARD_PASS_INDEX ||
+				passType[i] == TRANSPARENT_PASS_INDEX)
+			{
+				// frustum_visible = frustum_visible && FrustumIntersectSphere(CAMERA.frustum, world_sphere);
+				frustum_visible = frustum_visible && FrustumIntersectBox(CAMERA.frustum, world_box);
+
+				occlusion_visible = occlusion_visible && OcclusionCull( 			//遮蔽剔除使用前一帧的深度缓冲Hiz
+					world_sphere, 
+					CAMERA.pos.xyz, CAMERA.view, CAMERA.proj, CAMERA.near,
+					DEPTH_PYRAMID[1], SAMPLER[3]); 
+			}
+
+			//光源空间绘制，平行光
+			if(passType[i] == DIRECTIONAL_SHADOW_PASS_INDEX)
+			{			
+				// 实际上这里的剔除也不是很严谨，平行光源的包围盒理论上是"无限长"的矩形
+				// frustum_visible = frustum_visible && FrustumIntersectBox(LIGHTS.directionalLights[passOffset[i]].frustum, world_box);
+				frustum_visible = frustum_visible && BoxIntersectSphere(world_box, LIGHTS.directionalLights[passOffset[i]].sphere);
+
+				// 屏幕空间深度提供的是"需要接受阴影的表面"信息，但即便物体在屏幕空间被完全遮蔽，它投射的阴影仍可能在屏幕空间可见（从侧面）
+				// 到底怎么剔除比较合适？
+			}
+
+			//光源空间绘制，点光源
+			if(passType[i] == POINT_SHADOW_PASS_INDEX)
+			{
+				if(passOffset[i] >= LIGHTS.lightSetting.pointshadowedLightCnt)	visible = false;	//没启用的点光源槽位
+				else frustum_visible = frustum_visible && BoxIntersectSphere(world_box, LIGHTS.pointLights[LIGHTS.lightSetting.pointShadowLightIDs[passOffset[i]]].sphere);
+			}
+
+			//TODO INDIRECT_COMMANDS可以放到这里来录制，不只是instanceCount
+
+			visible = visible && occlusion_visible && frustum_visible;
+			// visible = true;	// 
+
+			atomicAdd(MESH_DRAW_DATAS[i].setting.drawSize, visible ? 1 : 0);						// 存一下剔除的数量信息
+			atomicAdd(MESH_DRAW_DATAS[i].setting.frustumCull, frustum_visible ? 0 : 1);
+			atomicAdd(MESH_DRAW_DATAS[i].setting.occlusionCull, occlusion_visible ? 0 : 1);
+
+			MESH_DRAW_COMMANDS[i].commands[meshInfo.commandID].instanceCount = visible ? 1 : 0;		// 更新command
+		}
+	}
+
+	barrier();
+
+	// 逐cluster group剔除
+	for(int i = 0; i < processSize; i++)
+	{
+		if(gID < CLUSTER_GROUP_DRAW_DATAS[i].setting.processSize)
+		{
+			IndirectClusterGroupDrawInfo groupInfo = CLUSTER_GROUP_DRAW_DATAS[i].draws[gID];
+
+			MeshClusterGroup group = MESH_CLUSTER_GROUPS.slot[groupInfo.clusterGroupID];
+			Object object = OBJECTS.slot[groupInfo.objectID];
+
+			//BoundingSphere view_group_sphere = SphereTransform(group.sphere, CAMERA.view * object.model);	
+			BoundingSphere view_object_sphere = SphereTransform(object.sphere, CAMERA.view * object.model);		//统一使用object的包围盒做距离测试，保证计算的误差一致
+
+			//if(group.mipLevel == 0)
+			if(!CheckLOD(view_object_sphere, group.parentLodError))	//父节点error应该大于阈值		
+			{
+				for(uint j = 0; j < group.clusterSize; j++)
+				{
+					MeshCluster cluster = MESH_CLUSTERS.slot[group.clusterID[j]];
+
+					//BoundingSphere view_cluster_sphere = SphereTransform(cluster.sphere, CAMERA.view * object.model);	
+					if(CheckLOD(view_object_sphere, cluster.lodError))						//cluster本身error小于阈值
+					{
+						IndirectClusterDrawInfo clusterInfo;								//把cluster的信息填进缓冲里，在下面里进一步做剔除
+						clusterInfo.objectID = groupInfo.objectID;
+						clusterInfo.clusterID = group.clusterID[j];
+						clusterInfo.commandID = groupInfo.commandID;
+
+						uint offset = atomicAdd(CLUSTER_DRAW_DATAS[i].setting.processSize, 1);	
+						CLUSTER_DRAW_DATAS[i].draws[offset] = clusterInfo;
+						atomicAdd(CLUSTER_GROUP_DRAW_DATAS[i].setting.drawSize, 1);					
+					}
+				}
+			}
+		}
+	}
+
+	// 逐cluster剔除放在下一个pass里，atomicAdd好像对线程读写是局部的？
+}
+
+
+

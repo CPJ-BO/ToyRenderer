@@ -6,3 +6,6 @@ build/
 .DS_Store
 
 
+vsxmake2019/
+vsxmake2022/
+.VSCodeCounter/

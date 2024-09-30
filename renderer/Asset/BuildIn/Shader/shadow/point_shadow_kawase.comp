@@ -1,0 +1,42 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "../common/screen.glsl"
+
+layout(set = 0, binding = 0) uniform texture2D IN_TEX[6];
+layout(set = 0, binding = 1, rgba32f) uniform image2D OUT_TEX[6];
+layout(set = 1, binding = 0) uniform sampler SAMPLER[];
+
+layout(push_constant) uniform kawase_setting {
+    uint round;
+}KAWASE_SETTING;
+
+vec4 Kawase(texture2D tex, vec2 uv, vec2 texelSize, uint pixelOffset)
+{
+    vec4 o = vec4(0);
+    o += texture(sampler2D(tex, SAMPLER[0]), uv + vec2(pixelOffset + 0.5, pixelOffset + 0.5) * texelSize); 
+    o += texture(sampler2D(tex, SAMPLER[0]), uv + vec2(-pixelOffset - 0.5, pixelOffset + 0.5) * texelSize); 
+    o += texture(sampler2D(tex, SAMPLER[0]), uv + vec2(-pixelOffset - 0.5, -pixelOffset - 0.5) * texelSize); 
+    o += texture(sampler2D(tex, SAMPLER[0]), uv + vec2(pixelOffset + 0.5, -pixelOffset - 0.5) * texelSize); 
+    return o * 0.25;
+}
+
+#define THREAD_SIZE_X 16
+#define THREAD_SIZE_Y 16
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main() 
+{	
+    ivec2 pixel     = ivec2(gl_GlobalInvocationID.xy);
+    vec2 texelSize  = vec2(1.0f) / textureSize(IN_TEX[0], 0);
+    vec2 uv         = ScreenPixToUV(pixel, textureSize(IN_TEX[0], 0));
+
+    for(uint i = 0; i < 6; i++)
+    {
+        imageStore(OUT_TEX[i], pixel, Kawase(IN_TEX[i], uv, texelSize, KAWASE_SETTING.round));
+        // imageStore(OUT_TEX[i], pixel, texture(sampler2D(IN_TEX[i], SAMPLER), uv));
+    }
+}

@@ -1,0 +1,104 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../common/common.glsl"
+
+layout(set = 1, binding = 0, rgba8)         uniform image2D G_BUFFER_DIFFUSE_ROUGHNESS;	
+layout(set = 1, binding = 1, rgba8_snorm)   uniform image2D G_BUFFER_NORMAL_METALLIC;	
+layout(set = 1, binding = 2, rgba16f)       uniform image2D G_BUFFER_EMISSION;	
+layout(set = 1, binding = 3, rgba16f)       uniform image2D FINAL_COLOR;		
+
+layout(push_constant) uniform DeferredLightSetting {
+    uint mode;
+} SETTING;
+
+// 0    Color
+// 1    Normal
+// 2    Roughness/Metallic
+// 3    World pos
+// 4    Shadow
+// 5    AO
+// 6    Shadow cascade
+// 7    Cluster light count
+// 8    Cluster XY
+// 9    Cluster Z
+// 10   Indirect light
+// 11   Indirect irradiance
+// 12   Direct light
+
+const vec4 CascadeColors[4] = {
+	vec4(1.0f, 0.0f, 0.0f, 1.0f),
+	vec4(0.0f, 1.0f, 0.0f, 1.0f),
+	vec4(0.0f, 0.0f, 1.0f, 1.0f),
+	vec4(1.0f, 1.0f, 0.0f, 1.0f)
+};
+
+#define THREAD_SIZE_X 16
+#define THREAD_SIZE_Y 16
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main()
+{
+    ivec2 pixel     = ivec2(gl_GlobalInvocationID.xy);
+    vec2 uv         = ScreenPixToUV(pixel); 
+
+    vec4 gbffer0    = imageLoad(G_BUFFER_DIFFUSE_ROUGHNESS, pixel);
+    vec4 gbffer1    = imageLoad(G_BUFFER_NORMAL_METALLIC, pixel);
+    vec4 gbffer2    = imageLoad(G_BUFFER_EMISSION, pixel);
+    vec3 diffuse    = gbffer0.xyz;
+    vec3 normal     = gbffer1.xyz;
+    vec3 emission   = gbffer2.xyz;
+    float roughness = gbffer0.w;
+    float metallic  = gbffer1.w;
+    vec4 worldPos   = DepthToWorld(uv);  // 从UV重建的世界坐标会有一些精度误差，不算大
+
+    // 光照参数计算 //////////////////////////////////
+    
+    float a2    = pow(roughness, 4) ;                           //粗糙度4次方
+    vec3 F0     = mix(vec3(0.04f), diffuse.rgb, metallic);      //菲涅尔反射率，表征对不同波长光的折射差异（也就是镜面反射颜色）
+
+	vec4 viewPos    = WorldToView(worldPos);
+	vec3 N          = normalize(normal);                        //法线
+	vec3 V          = normalize((CAMERA.pos - worldPos).xyz);	//视线
+    vec3 R          = normalize(reflect(-V, N));                //反射
+
+    // 直接光照计算 //////////////////////////////////
+
+    vec3 directLightColor = 
+        DirectLight(
+        diffuse, F0, roughness, metallic,
+        worldPos, N, V);
+
+    // 间接光照计算 //////////////////////////////////
+    // TODO
+    vec3 indirectLightColor = vec3(0.0f);
+
+    // 输出 //////////////////////////////////
+    vec3 outColor           = directLightColor + indirectLightColor + emission;	
+
+    int cascadeLevel        = CascadeLevel(worldPos);
+    float directionalShadow = DirectionalShadow(worldPos);
+
+    ivec3 clusterGrid       = FetchLightClusterGrid(WorldToNDC(worldPos).xyz);
+    uvec2 clusterIndex      = FetchLightClusterIndex(clusterGrid);  //读取对应cluster的索引信息 
+
+    vec4 finalColor = vec4(0.0f);
+    if(SETTING.mode == 0) finalColor = vec4(outColor, 1.0f);
+    if(SETTING.mode == 1) finalColor = vec4(vec3(N * 0.5f + 0.5f), 1.0f);
+    if(SETTING.mode == 2) finalColor = vec4(roughness, metallic, 0.0f, 1.0f);
+    if(SETTING.mode == 3) finalColor = worldPos;
+    if(SETTING.mode == 4) finalColor = vec4(vec3(directionalShadow), 1.0f);
+    if(SETTING.mode == 5) finalColor = vec4(vec3(FetchDepth(uv)), 1.0f);
+    if(SETTING.mode == 6) finalColor = CascadeColors[cascadeLevel];
+    if(SETTING.mode == 7) finalColor = vec4(vec3(clusterIndex.y / float(MAX_LIGHTS_PER_CLUSTER)), 1.0f);
+    if(SETTING.mode == 8) finalColor = vec4(clusterGrid.xy / vec2(LIGHT_CLUSTER_WIDTH, LIGHT_CLUSTER_HEIGHT), 0.0f, 1.0f);
+    if(SETTING.mode == 9) finalColor = vec4(vec3(clusterGrid.z / float(LIGHT_CLUSTER_DEPTH)), 1.0f);
+
+    imageStore(FINAL_COLOR, pixel, finalColor);
+}
+
+
+
+

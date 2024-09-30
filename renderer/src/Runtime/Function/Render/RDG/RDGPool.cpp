@@ -32,11 +32,6 @@ RDGBufferPool::PooledBuffer RDGBufferPool::Allocate(const RHIBufferInfo& info)
 
 void RDGBufferPool::Release(const RDGBufferPool::PooledBuffer& pooledBuffer)
 {
-    // auto& buffers = pooledBuffers[pooledBuffer.buffer->GetInfo()];
-    // for(auto iter = buffers.begin(); iter != buffers.end(); iter++) 
-    // {
-    // }
-
     pooledBuffers[pooledBuffer.buffer->GetInfo()].push_back(pooledBuffer);
     pooledSize++;
 }

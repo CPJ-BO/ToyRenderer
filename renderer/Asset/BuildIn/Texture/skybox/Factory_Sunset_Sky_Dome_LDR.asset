@@ -1,0 +1,33 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "572c7497-6b05-42c8-b310-93a431c56f2d"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Texture/skybox/Factory_Sunset_Sky_Dome_LDR/px.png",
+                    "Asset/BuildIn/Texture/skybox/Factory_Sunset_Sky_Dome_LDR/nx.png",
+                    "Asset/BuildIn/Texture/skybox/Factory_Sunset_Sky_Dome_LDR/py.png",
+                    "Asset/BuildIn/Texture/skybox/Factory_Sunset_Sky_Dome_LDR/ny.png",
+                    "Asset/BuildIn/Texture/skybox/Factory_Sunset_Sky_Dome_LDR/pz.png",
+                    "Asset/BuildIn/Texture/skybox/Factory_Sunset_Sky_Dome_LDR/nz.png"
+                ],
+                "textureType": 2,
+                "format": 4,
+                "extent": {
+                    "width": 512,
+                    "height": 512,
+                    "depth": 1
+                },
+                "mipLevels": 10,
+                "arrayLayer": 6
+            }
+        }
+    }
+}

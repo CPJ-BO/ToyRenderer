@@ -52,7 +52,7 @@ public:
     RDGTextureBuilder CreateTexture(std::string name);
     RDGBufferBuilder CreateBuffer(std::string name);
     RDGRenderPassBuilder CreateRenderPass(std::string name);    // 假定所有pass的添加顺序就是执行顺序，方便处理排序和依赖关系等
-    RDGComputePassBuilder CreateComputePass(std::string name);     
+    RDGComputePassBuilder CreateComputePass(std::string name);  // index是为同名的pass准备，方便索引   
     RDGPresentPassBuilder CreatePresentPass(std::string name);    
 
     RDGTextureHandle GetTexture(std::string name);
@@ -66,7 +66,8 @@ public:
     void Execute();
 
 private:
-    void CreateBarriers(RDGPassNodeRef pass);
+    void CreateInputBarriers(RDGPassNodeRef pass);
+    void CreateOutputBarriers(RDGPassNodeRef pass);
     void ReleaseResource(RDGPassNodeRef pass);
     void ExecutePass(RDGRenderPassNodeRef pass);
     void ExecutePass(RDGComputePassNodeRef pass);
@@ -89,8 +90,8 @@ private:
     void Release(RDGTextureNodeRef textureNode, RHIResourceState state);  
     void Release(RDGBufferNodeRef bufferNode, RHIResourceState state);  
 
-    RHIResourceState PreviousState(RDGTextureNodeRef textureNode, RDGPassNodeRef passNode); // 获取当前pass（在执行顺序上）的资源的前序状态
-    RHIResourceState PreviousState(RDGBufferNodeRef bufferNode, RDGPassNodeRef passNode);
+    RHIResourceState PreviousState(RDGTextureNodeRef textureNode, RDGPassNodeRef passNode, TextureSubresourceRange subresource = {}, bool output = false);    // 获取当前pass（在执行顺序上）的资源的前序状态
+    RHIResourceState PreviousState(RDGBufferNodeRef bufferNode, RDGPassNodeRef passNode, uint32_t offset = 0, uint32_t size = 0, bool output = false);      // output用于标记是相对于输入还是输出资源
     bool IsLastUsedPass(RDGTextureNodeRef textureNode, RDGPassNodeRef passNode);
     bool IsLastUsedPass(RDGBufferNodeRef bufferNode, RDGPassNodeRef passNode);
 
@@ -111,7 +112,7 @@ public:
 
     RDGTextureBuilder& Import(RHITextureRef texture, RHIResourceState initState); 
     RDGTextureBuilder& Exetent(Extent3D extent);
-    RDGTextureBuilder& Format(TextureFormat format);
+    RDGTextureBuilder& Format(RHIFormat format);
     RDGTextureBuilder& MemoryUsage(MemoryUsage memoryUsage);
     RDGTextureBuilder& AllowReadWrite();
     RDGTextureBuilder& AllowRenderTarget();
@@ -156,9 +157,10 @@ public:
     , pass(pass)
     , graph(builder->GetGraph()) {};
 
+    RDGRenderPassBuilder& PassIndex(uint32_t index);                                        // 给一个index设置函数方便给Execute传参
     RDGRenderPassBuilder& RootSignature(RHIRootSignatureRef rootSignature);                 // 若提供根签名未提供描述符，使用池化创建
     RDGRenderPassBuilder& DescriptorSet(uint32_t set, RHIDescriptorSetRef descriptorSet);   // 若提供了描述符，直接用相应的描述符
-    RDGRenderPassBuilder& Read(uint32_t set, uint32_t binding, uint32_t index, RDGBufferHandle buffer, uint32_t offset = 0, uint32_t range = 0);
+    RDGRenderPassBuilder& Read(uint32_t set, uint32_t binding, uint32_t index, RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);
     RDGRenderPassBuilder& Read(uint32_t set, uint32_t binding, uint32_t index, RDGTextureHandle texture, TextureViewType viewType = VIEW_TYPE_2D, TextureSubresourceRange subresource = {});
     RDGRenderPassBuilder& Color(uint32_t binding, RDGTextureHandle texture, 
                                 AttachmentLoadOp load = ATTACHMENT_LOAD_OP_DONT_CARE, 
@@ -171,6 +173,10 @@ public:
                                         float clearDepth = 1.0f,
 	                                    uint32_t clearStencil = 0,
                                         TextureSubresourceRange subresource = {});
+    RDGRenderPassBuilder& OutputRead(RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);             // 在执行完Pass后作为输出，自动屏障，可能还会在其他地方使用
+    RDGRenderPassBuilder& OutputRead(RDGTextureHandle texture, TextureSubresourceRange subresource = {});      
+    RDGRenderPassBuilder& OutputReadWrite(RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);
+    RDGRenderPassBuilder& OutputReadWrite(RDGTextureHandle texture, TextureSubresourceRange subresource = {});  
     RDGRenderPassBuilder& Execute(const RDGPassExecuteFunc& execute);
 
     RDGRenderPassHandle Finish() { return pass->GetHandle(); }
@@ -190,13 +196,20 @@ public:
     , pass(pass)
     , graph(builder->GetGraph()) {};
 
+    RDGComputePassBuilder& PassIndex(uint32_t index);                                        // 给一个index设置函数方便给Execute传参
     RDGComputePassBuilder& RootSignature(RHIRootSignatureRef rootSignature);                 // 若提供根签名未提供描述符，使用池化创建
     RDGComputePassBuilder& DescriptorSet(uint32_t set, RHIDescriptorSetRef descriptorSet);   // 若提供了描述符，直接用相应的描述符
-    RDGComputePassBuilder& Read(uint32_t set, uint32_t binding, uint32_t index, RDGBufferHandle buffer, uint32_t offset = 0, uint32_t range = 0);
+    RDGComputePassBuilder& Read(uint32_t set, uint32_t binding, uint32_t index, RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);
     RDGComputePassBuilder& Read(uint32_t set, uint32_t binding, uint32_t index, RDGTextureHandle texture, TextureViewType viewType = VIEW_TYPE_2D, TextureSubresourceRange subresource = {}); 
-    RDGComputePassBuilder& ReadWrite(uint32_t set, uint32_t binding, uint32_t index, RDGBufferHandle buffer, uint32_t offset = 0, uint32_t range = 0);   // 好像和read也没什么区别？
+    RDGComputePassBuilder& ReadWrite(uint32_t set, uint32_t binding, uint32_t index, RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);   // 好像和read也没什么区别？
     RDGComputePassBuilder& ReadWrite(uint32_t set, uint32_t binding, uint32_t index, RDGTextureHandle texture, TextureViewType viewType = VIEW_TYPE_2D, TextureSubresourceRange subresource = {}); 
-    
+    RDGComputePassBuilder& OutputRead(RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);             // 在执行完Pass后作为输出，自动屏障，可能还会在其他地方使用
+    RDGComputePassBuilder& OutputRead(RDGTextureHandle texture, TextureSubresourceRange subresource = {});      
+    RDGComputePassBuilder& OutputReadWrite(RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);
+    RDGComputePassBuilder& OutputReadWrite(RDGTextureHandle texture, TextureSubresourceRange subresource = {});  
+    RDGComputePassBuilder& OutputIndirectDraw(RDGBufferHandle buffer, uint32_t offset = 0, uint32_t size = 0);
+
+
     RDGComputePassBuilder& Execute(const RDGPassExecuteFunc& execute);
 
     RDGComputePassHandle Finish() { return pass->GetHandle(); }

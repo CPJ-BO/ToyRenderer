@@ -13,6 +13,8 @@ public:
 
     void Tick(float deltaTime);
 
+    void Save();
+
     std::shared_ptr<Scene> CreateNewScene(std::string name);
 
     const std::vector<std::shared_ptr<Scene>>& GetScenes()  { return scenes; }

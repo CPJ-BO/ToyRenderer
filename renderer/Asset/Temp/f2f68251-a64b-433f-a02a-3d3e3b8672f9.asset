@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "f2f68251-a64b-433f-a02a-3d3e3b8672f9"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Light_MS_LampAll_01_Normal.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 512,
+                    "height": 512,
+                    "depth": 1
+                },
+                "mipLevels": 10,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

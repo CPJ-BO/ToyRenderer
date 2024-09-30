@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "95b3e15a-56eb-4a85-8469-f573a3ed545c"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\4.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 256,
+                    "height": 256,
+                    "depth": 1
+                },
+                "mipLevels": 9,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

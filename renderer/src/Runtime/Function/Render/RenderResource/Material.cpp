@@ -1,5 +1,6 @@
 #include "Material.h"
 #include "Function/Global/EngineContext.h"
+#include "Function/Render/RenderResource/Shader.h"
 #include "Function/Render/RenderResource/Texture.h"
 #include "Resource/Asset/Asset.h"
 #include <cstdint>
@@ -17,6 +18,9 @@ void Material::OnLoadAsset()
     LoadAssetArrayBind(Texture, texture2D)
     LoadAssetArrayBind(Texture, textureCube)
     LoadAssetArrayBind(Texture, texture3D)
+    LoadAssetBind(Shader, vertexShader)
+    LoadAssetBind(Shader, geometryShader)
+    LoadAssetBind(Shader, fragmentShader)
     EndLoadAssetBind
 
     Update();
@@ -32,12 +36,16 @@ void Material::OnSaveAsset()
     SaveAssetArrayBind(texture2D)
     SaveAssetArrayBind(textureCube)
     SaveAssetArrayBind(texture3D)
+    SaveAssetBind(vertexShader)
+    SaveAssetBind(geometryShader)
+    SaveAssetBind(fragmentShader)
     EndSaveAssetBind
 }
 
 Material::Material()
 {
     materialID = EngineContext::RenderResource()->AllocateMaterialID();
+    Update();
 }
 
 Material::~Material()

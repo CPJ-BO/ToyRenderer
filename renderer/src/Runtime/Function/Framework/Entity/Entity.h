@@ -12,11 +12,10 @@ class Scene;
 class Entity : public std::enable_shared_from_this<Entity> 
 {
 public:
-    void Init();
-
-    void Tick(float deltaTime);
-
+    void Load();
     void Save();
+    void Init();
+    void Tick(float deltaTime);
 
     template<typename TComponent>
     std::shared_ptr<TComponent> TryGetComponent()
@@ -62,10 +61,12 @@ public:
     }
 
     template <class TComponent, class... Args>
-    void AddComponent(Args&&... args)
+    std::shared_ptr<TComponent> AddComponent(Args&&... args)
     {
-        std::shared_ptr<Component> component = std::make_shared<TComponent>(args...);
+        std::shared_ptr<TComponent> component = std::make_shared<TComponent>(args...);
         AddComponent(component);
+
+        return component;
     }
 
     void AddComponent(std::shared_ptr<Component> component);
@@ -81,7 +82,7 @@ public:
     void AddChild(std::shared_ptr<Entity> child);
     bool RemoveChild(std::shared_ptr<Entity> child);
 
-    inline std::weak_ptr<Scene> GetScene()                          { return scene; }
+    inline std::shared_ptr<Scene> GetScene()                          { return scene.lock(); }
     
 private:
     uint32_t id = 0;    // 运行时分配，不做序列化

@@ -33,11 +33,15 @@ private:
 public:
     static RHIBackendRef Init(const RHIBackendInfo& info);
 
-    static RHIBackendRef Get() { return backend; }
-
+    static RHIBackendRef Get()      { return backend; }
+    
     virtual void Tick();    // 更新资源计数，清理无引用且长时间未使用资源
 
     virtual void Destroy();
+
+    //ImGui ////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    virtual void InitImGui(GLFWwindow* window) = 0;
 
     //基本资源 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -49,7 +53,7 @@ public:
 
     virtual RHICommandPoolRef CreateCommandPool(const RHICommandPoolInfo& info) = 0;
 
-    virtual RHICommandContextRef CreateCommandContext(RHICommandPool* pool) = 0;
+    virtual RHICommandContextRef CreateCommandContext(RHICommandPoolRef pool) = 0;
 
     //缓冲，纹理 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -85,7 +89,7 @@ public:
 
     //立即模式的命令接口 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    virtual RHIImmediateCommandRef GetImmediateCommand() = 0;
+    virtual RHICommandListImmediateRef GetImmediateCommand() = 0;
 
     
 protected:
@@ -96,7 +100,7 @@ protected:
 
     std::array<std::vector<RHIResourceRef>, RHI_RESOURCE_TYPE_MAX_CNT> resourceMap;
 
-    RHIBackendInfo backendInfo;
+    RHIBackendInfo backendInfo; 
 };
 
 
@@ -113,7 +117,10 @@ protected:
 class RHICommandContext : public RHIResource     
 {
 public:
-    RHICommandContext() : RHIResource(RHI_COMMAND_CONTEXT) {}
+    RHICommandContext(RHICommandPoolRef pool) 
+    : RHIResource(RHI_COMMAND_CONTEXT)
+    , pool(pool) 
+    {}
 
     virtual void BeginCommand() = 0;
 
@@ -152,6 +159,8 @@ public:
 
     virtual void SetScissor(Offset2D min, Offset2D max) = 0;
 
+    virtual void SetDepthBias(float constantBias, float slopeBias, float clampBias) = 0;
+
     virtual void SetGraphicsPipeline(RHIGraphicsPipelineRef graphicsState) = 0;
 
     virtual void SetComputePipeline(RHIComputePipelineRef computeState) = 0;	
@@ -181,16 +190,26 @@ public:
 
 	// virtual void EndRenderQuery(RHIRenderQuery* RenderQuery) = 0;
 
+    //ImGui /////////////////////////////////////////////////////////////////////////////////////
+
+    virtual void ImGuiCreateFontsTexture() = 0;
+
+    virtual void ImGuiRenderDrawData() = 0;
+
+private:
+    RHICommandPoolRef pool;
 };
 
-// 并不是所有command都需要在一个绘制的命令队列里完成，应该区别于RHICommandList单独开一个类？
-// 例如生成mipmap，内存交换和屏障，
-// vulkan可以简单的用VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT实现
-// UE里对应了RHICommandListImmediate？？ UE的命令队列的功能太多了，也并不完全贴近VkCommandBuffer的抽象
-class RHIImmediateCommand : public RHIResource 
+// 针对需要立即执行的不在渲染循环中的RHI指令单独设置的上下文
+// 每次调用Flush()将所有已经提交的指令立即执行
+class RHICommandContextImmediate : public RHIResource 
 {
 public:
-    RHIImmediateCommand() : RHIResource(RHI_IMMEDIATE_COMMAND) {}
+    RHICommandContextImmediate() 
+    : RHIResource(RHI_COMMAND_CONTEXT_IMMEDIATE)
+    {}
+
+    virtual void Flush() = 0;
 
     virtual void TextureBarrier(const RHITextureBarrier& barrier) = 0;
 

@@ -16,13 +16,13 @@ RHICommandListRef RHICommandPool::CreateCommandList(bool byPass)
             idleContexts.pop();
         }
         else {
-            context = RHIBackend::Get()->CreateCommandContext(this);
+            context = RHIBackend::Get()->CreateCommandContext(shared_from_this());
             contexts.push_back(context);
         }
     }
     
     CommandListInfo info = {
-        .pool = this,
+        .pool = shared_from_this(),
         .context = context,
         .byPass = byPass,
     };

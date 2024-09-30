@@ -44,12 +44,13 @@ public:
 
     void SetPosition(Vec3 position)         { this->position = position; } 
     void SetScale(Vec3 scale)               { this->scale = scale; } 
-    void SetRotation(Quaternion rotation)   { this->rotation = rotation.normalized(); UpdateAngle(); } 
-    void SetRotation(Vec3 eulerAngle)       { this->eulerAngle = eulerAngle; UpdateRotation();  }
+    void SetRotation(Quaternion rotation);
+    void SetRotation(Vec3 eulerAngle);
 
-    Vec3 Translate(Vec3 translation)        { this->position += translation; return this->position; }
-    Vec3 Scale(Vec3 scale)                  { this->scale = this->scale.array() * scale.array(); return this->scale; }
-    Vec3 Rotate(Vec3 angle)                 { this->eulerAngle += angle; UpdateRotation(); return this->eulerAngle; }
+    Vec3 Translate(Vec3 translation);
+    Vec3 Scale(Vec3 scale);
+    Vec3 Rotate(Vec3 angle);
+    //Quaternion Rotate(Quaternion rotation);
 
     Mat4 GetMatrix() const;
     Mat4 GetInverseMatrix() const;
@@ -74,8 +75,6 @@ private:
     Vec3 up                 = Vec3::UnitY();
     Vec3 right              = Vec3::UnitZ();
 
-    void UpdateAngle()      { this->eulerAngle = Math::ToEulerAngle(rotation); UpdateVector(); }
-    void UpdateRotation()   { this->rotation = Math::ToQuaternion(eulerAngle); UpdateVector(); } 
     void UpdateVector();
 
 private:
@@ -83,6 +82,6 @@ private:
     SerailizeEntry(position)
     SerailizeEntry(scale)
     SerailizeEntry(rotation)
-    UpdateAngle();
+    SetRotation(rotation);   
     EndSerailize
 };

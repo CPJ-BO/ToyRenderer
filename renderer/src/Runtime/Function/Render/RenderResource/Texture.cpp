@@ -1,5 +1,6 @@
 #include "Texture.h"
 #include "Core/Log/log.h"
+#include "Core/Util/TimeScope.h"
 #include "Function/Global/EngineContext.h"
 #include "Function/Render/RHI/RHIStructs.h"
 #include "Function/Render/RenderResource/RenderResourceManager.h"
@@ -20,7 +21,7 @@ BindlessSlot TextureTypeToBindlessSlot(TextureType type)
     case TEXTURE_TYPE_2D:           slot = BINDLESS_SLOT_TEXTURE_2D;        break;
     case TEXTURE_TYPE_2D_ARRAY:     slot = BINDLESS_SLOT_TEXTURE_2D_ARRAY;  break;
     case TEXTURE_TYPE_CUBE:         slot = BINDLESS_SLOT_TEXTURE_CUBE;      break;
-    //case TEXTURE_TYPE_3D:           slot = BINDLESS_SLOT_TEXTURE_3D;        break;
+    case TEXTURE_TYPE_3D:           slot = BINDLESS_SLOT_TEXTURE_3D;        break;
     default:                        LOG_FATAL("Unsupported texture type!"); }
 
     return slot;
@@ -33,7 +34,7 @@ TextureViewType TextureTypeToViewType(TextureType type)
     case TEXTURE_TYPE_2D:           viewType = VIEW_TYPE_2D;        break;
     case TEXTURE_TYPE_2D_ARRAY:     viewType = VIEW_TYPE_2D_ARRAY;  break;
     case TEXTURE_TYPE_CUBE:         viewType = VIEW_TYPE_CUBE;      break;
-    //case TEXTURE_TYPE_3D:           viewType = VIEW_TYPE_3D;        break;
+    case TEXTURE_TYPE_3D:           viewType = VIEW_TYPE_3D;        break;
     default:                        LOG_FATAL("Unsupported texture type!"); }    
 
     return viewType;
@@ -44,26 +45,28 @@ Texture::Texture(const std::string& path)
 , format(FORMAT_R8G8B8A8_SRGB)  
 , arrayLayer(1)
 {
-    this->path.push_back(path);
+    this->paths.push_back(path);
     LoadFromFile();
 }
 
-Texture::Texture(const std::vector<std::string>& path, TextureType type)
+Texture::Texture(const std::vector<std::string>& paths, TextureType type)
 : textureType(type)             // TODO 默认
 , format(FORMAT_R8G8B8A8_SRGB)  
-, arrayLayer(path.size())
+, arrayLayer(paths.size())
 {
-    this->path = path;
+    this->paths = paths;
     LoadFromFile();
 }
 
-Texture::Texture(TextureType type, TextureFormat format, Extent2D extent, uint32_t arrayLayer)
+Texture::Texture(TextureType type, RHIFormat format, Extent3D extent, uint32_t arrayLayer, uint32_t mipLevels)
 : textureType(type)
 , format(format)
 , extent(extent)
-, mipLevels((uint32_t)(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1)
 , arrayLayer(arrayLayer)
 {
+    this->mipLevels = mipLevels == 0 ? 
+                        (uint32_t)(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1 : 
+                        mipLevels;
     InitRHI();
 }
 
@@ -74,19 +77,27 @@ Texture::~Texture()
 
 void Texture::OnLoadAsset()
 {   
-    if(path.size() > 0) LoadFromFile();
-    else                InitRHI();
+    if(paths.size() > 0)    LoadFromFile();
+    else                    InitRHI();
 }
 
 void Texture::InitRHI()
 {
+    ResourceType resourceType = (textureType == TEXTURE_TYPE_CUBE) ? (RESOURCE_TYPE_TEXTURE_CUBE | RESOURCE_TYPE_TEXTURE) : RESOURCE_TYPE_TEXTURE;
+    if(IsRWFormat(format))      resourceType |= RESOURCE_TYPE_RW_TEXTURE;       // TODO由外部设置做选择？是否有什么开销
+    if(IsRWFormat(format))      resourceType |= RESOURCE_TYPE_RENDER_TARGET;    // 
+
+    TextureAspectFlags aspects =    IsDepthStencilFormat(format) ? TEXTURE_ASPECT_DEPTH_STENCIL :
+                                    IsDepthFormat(format) ? TEXTURE_ASPECT_DEPTH :
+                                    IsStencilFormat(format) ? TEXTURE_ASPECT_STENCIL : TEXTURE_ASPECT_COLOR;
+
     RHITextureInfo textureInfo = {
         .format = format,
-        .extent = {extent.width, extent.height, 1},
+        .extent = extent,
         .arrayLayers = arrayLayer,
         .mipLevels = mipLevels,
         .memoryUsage = MEMORY_USAGE_GPU_ONLY,
-        .type = RESOURCE_TYPE_TEXTURE,
+        .type = resourceType,
         .creationFlag = TEXTURE_CREATION_NONE};
     texture = EngineContext::RHI()->CreateTexture(textureInfo);
 
@@ -94,57 +105,34 @@ void Texture::InitRHI()
         .texture = texture,
         .format = format,
         .viewType = TextureTypeToViewType(textureType),
-        .subresource = { TEXTURE_ASPECT_COLOR, 0, mipLevels, 0, arrayLayer}};
+        .subresource = { aspects, 0, mipLevels, 0, arrayLayer}};
     textureView = EngineContext::RHI()->CreateTextureView(textureViewInfo);
 
-    RHISamplerInfo samplerInfo = {
-        .minFilter = FILTER_TYPE_LINEAR,
-        .magFilter = FILTER_TYPE_LINEAR,
-        .mipmapMode = MIPMAP_MODE_LINEAR,
-        .addressModeU = ADDRESS_MODE_REPEAT,
-        .addressModeV = ADDRESS_MODE_REPEAT,
-        .addressModeW = ADDRESS_MODE_REPEAT,
-        .compareFunction = COMPARE_FUNCTION_NEVER,
-        .mipLodBias = 0.0f,
-        .maxAnisotropy = 0.0f};
-    sampler = EngineContext::RHI()->CreateSampler(samplerInfo);
-
-
-    textureID = EngineContext::RenderResource()->AllocateBindlessID(
-    { .resourceType = RESOURCE_TYPE_COMBINED_IMAGE_SAMPLER, 
-                    .textureView = textureView, 
-                    .sampler = sampler}, 
-                    TextureTypeToBindlessSlot(textureType));
-
-    EngineContext::RHI()->GetImmediateCommand()->TextureBarrier({texture, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_UNORDERED_ACCESS});
+    // EngineContext::RHI()->GetImmediateCommand()->TextureBarrier({texture, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_SHADER_RESOURCE});
 }
 
 void Texture::LoadFromFile()
 {
-    // if( textureType != TEXTURE_TYPE_2D && 
-    //     textureType != TEXTURE_TYPE_2D_ARRAY &&
-    //     textureType != TEXTURE_TYPE_CUBE)
-    // {
-    //     LOG_DEBUG("Unsupported texture type for now!"); //暂时不对3D等做支持了
-    //     return;
-    // }
-
-    if(textureType == TEXTURE_TYPE_CUBE && path.size() != 6)
+    if(textureType == TEXTURE_TYPE_CUBE && paths.size() != 6)
     {
         LOG_DEBUG("Wrong file num with texture type cube!"); 
         return;        
     }
+    if(textureType == TEXTURE_TYPE_3D)
+    {
+        LOG_DEBUG("3D texture file is not supported for now!"); 
+        return;        
+    }
 
     bool initRHI = false;
-    RHIBufferRef stagingBuffer;
-    for(uint32_t i = 0; i < path.size(); i++)
+    for(uint32_t i = 0; i < paths.size(); i++)
     {
         std::vector<uint8_t> data;
-        EngineContext::File()->LoadBinary(path[0], data);
+        EngineContext::File()->LoadBinary(paths[i], data);
 
         int width, height, channels;
         stbi_info_from_memory(data.data(), data.size(), &width, &height, &channels);
-        stbi_uc* pixels = stbi_load_from_memory(data.data(), data.size(), &width, &height, &channels, 4);
+        stbi_uc* pixels = stbi_load_from_memory(data.data(), data.size(), &width, &height, &channels, 4);   // 这个函数非常慢,10~100ms
         uint32_t bufferSize = width * height * sizeof(uint32_t);
 
         // bool is16Bit = stbi_is_16_bit_from_memory(data.data(), data.size());
@@ -155,26 +143,25 @@ void Texture::LoadFromFile()
         {
             initRHI = true;
 
-            extent = {(uint32_t)width, (uint32_t)height};         
+            extent = {(uint32_t)width, (uint32_t)height, 1};         
             mipLevels = (uint32_t)(std::floor(std::log2(std::max(width, height)))) + 1;
 
             InitRHI();
-
-            RHIBufferInfo bufferInfo = {
-                .size = bufferSize,
-                .memoryUsage = MEMORY_USAGE_CPU_ONLY,
-                .type = RESOURCE_TYPE_BUFFER,
-                .creationFlag = BUFFER_CREATION_PERSISTENT_MAP
-            };
-            stagingBuffer = EngineContext::RHI()->CreateBuffer(bufferInfo);
         }
 
         // 拷贝纹理内存
+        RHIBufferInfo bufferInfo = {
+            .size = bufferSize,
+            .memoryUsage = MEMORY_USAGE_CPU_ONLY,
+            .type = RESOURCE_TYPE_BUFFER,
+            .creationFlag = BUFFER_CREATION_PERSISTENT_MAP
+        };
+        RHIBufferRef stagingBuffer = EngineContext::RHI()->CreateBuffer(bufferInfo);
+        memcpy(stagingBuffer->Map(), pixels, bufferSize);   
         EngineContext::RHI()->GetImmediateCommand()->TextureBarrier(
             {texture, 
             RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_TRANSFER_DST,
-            {TEXTURE_ASPECT_COLOR, 0, mipLevels, i, 1}});
-        memcpy(stagingBuffer->Map(), pixels, bufferSize);    
+            {TEXTURE_ASPECT_COLOR, 0, mipLevels, i, 1}});      
         EngineContext::RHI()->GetImmediateCommand()->CopyBufferToTexture(stagingBuffer, 0, texture, {TEXTURE_ASPECT_COLOR, 0, i, 1});
         
         stbi_image_free(pixels);
@@ -188,4 +175,11 @@ void Texture::LoadFromFile()
     EngineContext::RHI()->GetImmediateCommand()->TextureBarrier({texture, 
         RESOURCE_STATE_TRANSFER_SRC, RESOURCE_STATE_SHADER_RESOURCE, 
                 {TEXTURE_ASPECT_COLOR, 0, mipLevels, 0, arrayLayer}});     
+    EngineContext::RHI()->GetImmediateCommand()->Flush();
+
+    // 分配bindless，仅当从文件读入时使用
+    textureID = EngineContext::RenderResource()->AllocateBindlessID({ 
+        .resourceType = RESOURCE_TYPE_TEXTURE, 
+        .textureView = textureView}, 
+        TextureTypeToBindlessSlot(textureType));
 }

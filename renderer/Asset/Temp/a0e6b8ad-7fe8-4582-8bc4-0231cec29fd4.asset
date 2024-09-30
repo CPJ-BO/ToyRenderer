@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "a0e6b8ad-7fe8-4582-8bc4-0231cec29fd4"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Eff_Water_LargeWaves_Normal.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 128,
+                    "height": 128,
+                    "depth": 1
+                },
+                "mipLevels": 8,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

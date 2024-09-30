@@ -2,6 +2,7 @@
 
 #include "Function/Render/RHI/RHI.h"
 #include "Core/Log/Log.h"
+#include "Function/Render/RHI/RHIStructs.h"
 
 #include <spirv_reflect.h>
 #include <volk.h>
@@ -25,14 +26,24 @@ static const char* INSTANCE_LAYERS[] = {
     //"VK_LAYER_RENDERDOC_Capture",  
 };
 
+static const std::vector<VkValidationFeatureEnableEXT> ENABLED_VALIDATION_FEATURES = {  // 需要时再启用，对帧数影响大
+    //VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
+    //VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+    //VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+};
+
 static const char* INSTANCE_EXTENTIONS[] = {
-    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+    VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+};
+
+static const char* INSTANCE_VALIDATION_EXTENTIONS[] = {
+    VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME
 };
 
 static const char* DEVICE_EXTENTIONS[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-    VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+    //VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,      // 已经在vk1.2中改为VkPhysicalDeviceVulkan12Features指示，并入核心
+    //VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
     VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
 };
 
@@ -91,7 +102,17 @@ public:
         return debugCreateInfo;
     }
 
-    static std::vector<const char*> GetRequiredInstanceExtensions() 
+    static VkValidationFeaturesEXT GetValidationFeatureCreateInfo()
+    {
+        VkValidationFeaturesEXT validationFeaturesExt = {};
+        validationFeaturesExt.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+        validationFeaturesExt.pEnabledValidationFeatures = ENABLED_VALIDATION_FEATURES.data();
+        validationFeaturesExt.enabledValidationFeatureCount = ENABLED_VALIDATION_FEATURES.size();
+
+        return validationFeaturesExt;
+    }
+
+    static std::vector<const char*> GetRequiredInstanceExtensions(bool debug) 
     {
         std::vector<const char*> extensions;
 
@@ -106,6 +127,7 @@ public:
 
         // 其他扩展
         for(auto extention : INSTANCE_EXTENTIONS)  extensions.push_back(extention);
+        if(debug) for(auto extention : INSTANCE_VALIDATION_EXTENTIONS)  extensions.push_back(extention);
 
         return extensions;
     }
@@ -155,7 +177,7 @@ public:
         return pushConstantRange;
     }
 
-    static VkFormat TextureFormatToVkFormat(const TextureFormat& pixelFormat)
+    static VkFormat RHIFormatToVkFormat(const RHIFormat& pixelFormat)
     {
         VkFormat format;
 
@@ -185,6 +207,15 @@ public:
         case FORMAT_R16G16_UNORM:         format = VK_FORMAT_R16G16_UNORM;            break;
         case FORMAT_R16G16B16_UNORM:      format = VK_FORMAT_R16G16B16_UNORM;         break;
         case FORMAT_R16G16B16A16_UNORM:   format = VK_FORMAT_R16G16B16A16_UNORM;      break;
+
+        case FORMAT_R8_SNORM:             format = VK_FORMAT_R8_SNORM;                break;
+        case FORMAT_R8G8_SNORM:           format = VK_FORMAT_R8G8_SNORM;              break;
+        case FORMAT_R8G8B8_SNORM:         format = VK_FORMAT_R8G8B8_SNORM;            break;
+        case FORMAT_R8G8B8A8_SNORM:       format = VK_FORMAT_R8G8B8A8_SNORM;          break;
+        case FORMAT_R16_SNORM:            format = VK_FORMAT_R16_SNORM;               break;
+        case FORMAT_R16G16_SNORM:         format = VK_FORMAT_R16G16_SNORM;            break;
+        case FORMAT_R16G16B16_SNORM:      format = VK_FORMAT_R16G16B16_SNORM;         break;
+        case FORMAT_R16G16B16A16_SNORM:   format = VK_FORMAT_R16G16B16A16_SNORM;      break;
 
         case FORMAT_R8_UINT:              format = VK_FORMAT_R8_UINT;                 break;
         case FORMAT_R8G8_UINT:            format = VK_FORMAT_R8G8_UINT;               break;
@@ -222,9 +253,9 @@ public:
         return format;
     }
 
-    static TextureFormat VkFormatToTextureFormat(const VkFormat& vkFormat)
+    static RHIFormat VkFormatToRHIFormat(const VkFormat& vkFormat)
     {
-        TextureFormat format;
+        RHIFormat format;
 
         switch (vkFormat) {
         case VK_FORMAT_UNDEFINED:            format = FORMAT_UKNOWN;                  break;
@@ -252,6 +283,15 @@ public:
         case VK_FORMAT_R16G16_UNORM:         format = FORMAT_R16G16_UNORM;            break;
         case VK_FORMAT_R16G16B16_UNORM:      format = FORMAT_R16G16B16_UNORM;         break;
         case VK_FORMAT_R16G16B16A16_UNORM:   format = FORMAT_R16G16B16A16_UNORM;      break;
+
+        case VK_FORMAT_R8_SNORM:             format = FORMAT_R8_SNORM;                break;
+        case VK_FORMAT_R8G8_SNORM:           format = FORMAT_R8G8_SNORM;              break;
+        case VK_FORMAT_R8G8B8_SNORM:         format = FORMAT_R8G8B8_SNORM;            break;
+        case VK_FORMAT_R8G8B8A8_SNORM:       format = FORMAT_R8G8B8A8_SNORM;          break;
+        case VK_FORMAT_R16_SNORM:            format = FORMAT_R16_SNORM;               break;
+        case VK_FORMAT_R16G16_SNORM:         format = FORMAT_R16G16_SNORM;            break;
+        case VK_FORMAT_R16G16B16_SNORM:      format = FORMAT_R16G16B16_SNORM;         break;
+        case VK_FORMAT_R16G16B16A16_SNORM:   format = FORMAT_R16G16B16A16_SNORM;      break;
 
         case VK_FORMAT_R8_UINT:              format = FORMAT_R8_UINT;                 break;
         case VK_FORMAT_R8G8_UINT:            format = FORMAT_R8G8_UINT;               break;
@@ -284,6 +324,42 @@ public:
         case VK_FORMAT_D24_UNORM_S8_UINT:    format = FORMAT_D24_UNORM_S8_UINT;       break;
 
         default:                             format = FORMAT_UKNOWN;                   break;
+        }
+
+        return format;
+    }
+
+    static RHIFormat SpvFormatToRHIFormat(const SpvReflectFormat& spvFormat)
+    {
+        RHIFormat format;
+
+        switch (spvFormat) {
+        case SPV_REFLECT_FORMAT_UNDEFINED:              format = FORMAT_UKNOWN;                 break;
+        case SPV_REFLECT_FORMAT_R16_UINT:               format = FORMAT_R16_UINT;               break;
+        case SPV_REFLECT_FORMAT_R16_SINT:               format = FORMAT_R16_SINT;               break;
+        case SPV_REFLECT_FORMAT_R16_SFLOAT:             format = FORMAT_R16_SFLOAT;             break;
+        case SPV_REFLECT_FORMAT_R16G16_UINT:            format = FORMAT_R16G16_UINT;            break;
+        case SPV_REFLECT_FORMAT_R16G16_SINT:            format = FORMAT_R16G16_SINT;            break;
+        case SPV_REFLECT_FORMAT_R16G16_SFLOAT:          format = FORMAT_R16G16_SFLOAT;          break;
+        case SPV_REFLECT_FORMAT_R16G16B16_UINT:         format = FORMAT_R16G16B16_UINT;         break;
+        case SPV_REFLECT_FORMAT_R16G16B16_SINT:         format = FORMAT_R16G16B16_SINT;         break;
+        case SPV_REFLECT_FORMAT_R16G16B16_SFLOAT:       format = FORMAT_R16G16B16_SFLOAT;       break;
+        case SPV_REFLECT_FORMAT_R16G16B16A16_UINT:      format = FORMAT_R16G16B16A16_UINT;      break;
+        case SPV_REFLECT_FORMAT_R16G16B16A16_SINT:      format = FORMAT_R16G16B16A16_SINT;      break;
+        case SPV_REFLECT_FORMAT_R16G16B16A16_SFLOAT:    format = FORMAT_R16G16B16A16_SFLOAT;    break;
+        case SPV_REFLECT_FORMAT_R32_UINT:               format = FORMAT_R32_UINT;               break;
+        case SPV_REFLECT_FORMAT_R32_SINT:               format = FORMAT_R32_SINT;               break;
+        case SPV_REFLECT_FORMAT_R32_SFLOAT:             format = FORMAT_R32_SFLOAT;             break;
+        case SPV_REFLECT_FORMAT_R32G32_UINT:            format = FORMAT_R32G32_UINT;            break;
+        case SPV_REFLECT_FORMAT_R32G32_SINT:            format = FORMAT_R32G32_SINT;            break;
+        case SPV_REFLECT_FORMAT_R32G32_SFLOAT:          format = FORMAT_R32G32_SFLOAT;          break;
+        case SPV_REFLECT_FORMAT_R32G32B32_UINT:         format = FORMAT_R32G32B32_UINT;         break;
+        case SPV_REFLECT_FORMAT_R32G32B32_SINT:         format = FORMAT_R32G32B32_SINT;         break;
+        case SPV_REFLECT_FORMAT_R32G32B32_SFLOAT:       format = FORMAT_R32G32B32_SFLOAT;       break;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_UINT:      format = FORMAT_R32G32B32A32_UINT;      break;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_SINT:      format = FORMAT_R32G32B32A32_SINT;      break;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_SFLOAT:    format = FORMAT_R32G32B32A32_SFLOAT;    break;
+        default:                                        LOG_FATAL("Unsupported reflect format type!"); 
         }
 
         return format;
@@ -383,6 +459,19 @@ public:
         return compare;
     }
 
+    static VkSamplerReductionMode SamplerReductionModeToVk(SamplerReductionMode reductionMode)
+    {
+        VkSamplerReductionMode mode = VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE;
+        switch (reductionMode) {
+        case SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE:   mode = VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE; break;
+        case SAMPLER_REDUCTION_MODE_MIN:                mode = VK_SAMPLER_REDUCTION_MODE_MIN; break;
+        case SAMPLER_REDUCTION_MODE_MAX:                mode = VK_SAMPLER_REDUCTION_MODE_MAX; break;
+        default:                                        mode = VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE; break;
+        }
+
+        return mode;
+    }
+
     static VkImageViewType TextureViewTypeToVk(TextureViewType textureViewType)
     {
         VkImageViewType type;
@@ -460,6 +549,7 @@ public:
         VkDescriptorType descriptorType;
         switch (resourceType) {
             case RESOURCE_TYPE_SAMPLER:                 descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;                        break;
+            case RESOURCE_TYPE_TEXTURE_CUBE:            descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;                  break;
             case RESOURCE_TYPE_TEXTURE:                 descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;                  break;
             case RESOURCE_TYPE_RW_TEXTURE:              descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;                  break;
             case RESOURCE_TYPE_COMBINED_IMAGE_SAMPLER:  descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;         break;
@@ -480,6 +570,7 @@ public:
         switch (resourceType) {
 
             case RESOURCE_TYPE_TEXTURE:                 imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;         break;
+            case RESOURCE_TYPE_TEXTURE_CUBE:            imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;         break;
             case RESOURCE_TYPE_RW_TEXTURE:              imageLayout = VK_IMAGE_LAYOUT_GENERAL;                          break;
             case RESOURCE_TYPE_COMBINED_IMAGE_SAMPLER:  imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;         break;
             default:                                    LOG_FATAL("Unsupported resource type!");  
@@ -559,22 +650,22 @@ public:
                                                                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |                  // 0x00000800
                                                                                         VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;           // 0x00200000
 
-        if (accessFlags &   VK_ACCESS_INPUT_ATTACHMENT_READ_BIT)            flags |=    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;                  // 0x00000080
+        if(accessFlags &    VK_ACCESS_INPUT_ATTACHMENT_READ_BIT)            flags |=    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;                  // 0x00000080
 
-        if (accessFlags & ( VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | 
+        if(accessFlags & (  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | 
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT))  flags |=    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |            // 0x00000100
                                                                                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;              // 0x00000200
 
-        if (accessFlags & ( VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | 
+        if(accessFlags & (  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | 
                             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT))          flags |=    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;          // 0x00000400 
 
-        if((accessFlags & ( VK_ACCESS_TRANSFER_READ_BIT | 
-                            VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)            flags |=    VK_PIPELINE_STAGE_TRANSFER_BIT;                         // 0x00001000
+        if(accessFlags & (  VK_ACCESS_TRANSFER_READ_BIT | 
+                            VK_ACCESS_TRANSFER_WRITE_BIT))                  flags |=    VK_PIPELINE_STAGE_TRANSFER_BIT;                         // 0x00001000
 
         if(accessFlags & (  VK_ACCESS_HOST_READ_BIT | 
                             VK_ACCESS_HOST_WRITE_BIT))                      flags |=    VK_PIPELINE_STAGE_HOST_BIT;                             // 0x00004000
 
-        if (flags == 0) flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        if(flags == 0) flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         return flags;
     }
 

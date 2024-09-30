@@ -1,0 +1,43 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Model",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "d1511263-c0c4-4e3a-999a-3f8d58165b31"
+                    }
+                },
+                "AssetBinder": {
+                    "assetMap": [
+                        {
+                            "key": "cache",
+                            "value": {
+                                "str": "00000000-0000-0000-0000-000000000000"
+                            }
+                        }
+                    ],
+                    "assetArrayMap": [
+                        {
+                            "key": "materials",
+                            "value": []
+                        }
+                    ]
+                },
+                "path": "Asset/BuildIn/Model/Basic/cube.obj",
+                "processSetting": {
+                    "smoothNormal": false,
+                    "flipUV": false,
+                    "loadMaterials": false,
+                    "tangentSpace": false,
+                    "generateBVH": false,
+                    "generateCluster": false,
+                    "generateVirtualMesh": false,
+                    "cacheCluster": false
+                }
+            }
+        }
+    }
+}

@@ -15,6 +15,15 @@ void AxisAlignedBox::Merge(const Vec3& newPoint)
     halfExtent = center - minCorner;
 }
 
+void AxisAlignedBox::Merge(const AxisAlignedBox& other)
+{
+    minCorner = minCorner.cwiseMin(other.minCorner);
+    maxCorner = maxCorner.cwiseMin(other.maxCorner);
+
+    center = 0.5f * (minCorner + maxCorner);
+    halfExtent = center - minCorner;
+}
+
 void AxisAlignedBox::Update(const Vec3& center, const Vec3& halfExtent)
 {
     this->center = center;
@@ -48,33 +57,33 @@ BoundingSphere::BoundingSphere(const std::vector<Vec3>& points)
             }
         }
 
-        float max_len = 0;
+        float maxLength = 0;
         uint32_t max_axis = 0;
         for (uint32_t k = 0; k < 3; k++)
         {
             Vec3 pmin = points[minIndex[k]];
             Vec3 pmax = points[maxIndex[k]];
             float tlen = pow((pmax - pmin).norm(), 2);  
-            if (tlen > max_len) max_len = tlen, max_axis = k;
+            if (tlen > maxLength) maxLength = tlen, max_axis = k;
         }
         Vec3 pmin = points[minIndex[max_axis]];
         Vec3 pmax = points[maxIndex[max_axis]];
 
 
         center = (pmin + pmax) * 0.5f;
-        radius = float(0.5 * sqrt(max_len));
-        max_len = radius * radius;
+        radius = float(0.5 * sqrt(maxLength));
+        maxLength = radius * radius;
 
         for (uint32_t i = 0; i < points.size(); i++) 
         {
             float len = pow((points[i] - center).norm(), 2);
-            if (len > max_len) 
+            if (len > maxLength) 
             {
                 len = sqrt(len);
                 float t = 0.5 - 0.5 * (radius / len);
                 center = center + (points[i] - center) * t;
                 radius = (radius + len) * 0.5;
-                max_len = radius * radius;
+                maxLength = radius * radius;
             }
         }
 
@@ -101,14 +110,14 @@ BoundingSphere::BoundingSphere(const std::vector<BoundingSphere>& spheres)
         }
     }
 
-    float max_len = 0;
+    float maxLength = 0;
     uint32_t max_axis = 0;
     for (uint32_t k = 0; k < 3; k++) 
     {
         BoundingSphere spmin = spheres[minIndex[k]];
         BoundingSphere spmax = spheres[maxIndex[k]];
         float tlen = (spmax.center - spmin.center).norm() + spmax.radius + spmin.radius;
-        if (tlen > max_len) max_len = tlen, max_axis = k;
+        if (tlen > maxLength) maxLength = tlen, max_axis = k;
     }
 
     BoundingSphere sphere = spheres[minIndex[max_axis]];

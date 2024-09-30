@@ -11,10 +11,20 @@ void WorldManager::Init(std::string defaultScenePath)
 
 void WorldManager::Tick(float deltaTime)
 {
+    ENGINE_TIME_SCOPE(WorldManager::Tick);
     if (activeScene) 
     {
         activeScene->Tick(deltaTime);
     }
+}
+
+void WorldManager::Save()
+{
+	if(activeScene) 
+	{
+		EngineContext::Asset()->SaveAsset(activeScene);
+		ENGINE_LOG_INFO("Scene [{}] [{}] saved.", activeScene->GetName(), activeScene->GetUID().ToString());
+	}
 }
 
 std::shared_ptr<Scene> WorldManager::CreateNewScene(std::string name)
@@ -38,7 +48,11 @@ std::shared_ptr<Scene> WorldManager::GetScene(std::string name)
 std::shared_ptr<Scene> WorldManager::SetActiveScene(std::string name)
 {
     std::shared_ptr<Scene> scene = GetScene(name);
-    if(scene) activeScene = scene;
+    if(scene) 
+    {
+        if(activeScene != scene) Save();
+        activeScene = scene;
+    }
 
     return scene;
 }

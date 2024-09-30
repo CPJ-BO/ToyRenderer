@@ -1,0 +1,28 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Texture",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "bbf0ad5f-1be2-4c3b-8ba1-1a5a2f912081"
+                    }
+                },
+                "paths": [
+                    "Asset/BuildIn/Model/Scene//textures\\Area_Dq_Stone_Common_Full_S_14_Normal.png"
+                ],
+                "textureType": 0,
+                "format": 4,
+                "extent": {
+                    "width": 512,
+                    "height": 512,
+                    "depth": 1
+                },
+                "mipLevels": 10,
+                "arrayLayer": 1
+            }
+        }
+    }
+}

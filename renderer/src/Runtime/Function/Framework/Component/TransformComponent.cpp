@@ -7,6 +7,8 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(Component, TransformComponent)
 
 void TransformComponent::Init()
 {
+    Component::Init();
+
 	UpdateMatrix();
 }
 

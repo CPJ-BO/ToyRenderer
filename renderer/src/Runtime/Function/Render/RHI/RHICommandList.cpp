@@ -75,6 +75,12 @@ void RHICommandList::CopyTexture(RHITextureRef src, TextureSubresourceLayers src
     else ADD_COMMAND(CopyTexture, src, srcSubresource, dst, dstSubresource);
 }
 
+void RHICommandList::GenerateMips(RHITextureRef src)
+{
+    if(info.byPass) info.context->GenerateMips(src);
+    else ADD_COMMAND(GenerateMips, src);   
+}
+
 void RHICommandList::PushEvent(const std::string& name, Color3 color) 
 {
     if(info.byPass) info.context->PushEvent(name, color);
@@ -107,8 +113,14 @@ void RHICommandList::SetViewport(Offset2D min, Offset2D max)
 
 void RHICommandList::SetScissor(Offset2D min, Offset2D max) 
 {
-    if(info.byPass) info.context->SetScissor(min, max) ;
+    if(info.byPass) info.context->SetScissor(min, max);
     else ADD_COMMAND(SetScissor, min, max);
+}
+
+void RHICommandList::SetDepthBias(float constantBias, float slopeBias, float clampBias)
+{
+    if(info.byPass) info.context->SetDepthBias(constantBias, slopeBias, clampBias);
+    else ADD_COMMAND(SetDepthBias, constantBias, slopeBias, clampBias);
 }
 
 void RHICommandList::SetGraphicsPipeline(RHIGraphicsPipelineRef graphicsState) 
@@ -183,10 +195,66 @@ void RHICommandList::DrawIndexedIndirect(RHIBufferRef argumentBuffer, uint32_t o
     else ADD_COMMAND(DrawIndexedIndirect, argumentBuffer, offset, drawCount);
 }
 
+void RHICommandList::ImGuiCreateFontsTexture()
+{
+    if(info.byPass) info.context->ImGuiCreateFontsTexture();
+    else ADD_COMMAND(ImGuiCreateFontsTexture);
+}
+
+void RHICommandList::ImGuiRenderDrawData()
+{
+    if(info.byPass) info.context->ImGuiRenderDrawData();
+    else ADD_COMMAND(ImGuiRenderDrawData);
+}
 
 
+void RHICommandListImmediate::Flush()
+{
+    // LOG_DEBUG("RHICommandListImmediate Flushed.");
+    for (int32_t i = 0; i < commands.size(); i++) 
+    {
+        commands[i]->Execute(info.context);
+        delete commands[i];
+    }
+    commands.clear();
 
+    info.context->Flush();
+}
 
+void RHICommandListImmediate::TextureBarrier(const RHITextureBarrier& barrier)
+{
+    ADD_COMMAND_IMMEDIATE(TextureBarrier, barrier);
+}
+
+void RHICommandListImmediate::BufferBarrier(const RHIBufferBarrier& barrier)
+{
+    ADD_COMMAND_IMMEDIATE(BufferBarrier, barrier);
+}
+
+void RHICommandListImmediate::CopyTextureToBuffer(RHITextureRef src, TextureSubresourceLayers srcSubresource, RHIBufferRef dst, uint64_t dstOffset)
+{
+    ADD_COMMAND_IMMEDIATE(CopyTextureToBuffer, src, srcSubresource, dst, dstOffset);
+}
+
+void RHICommandListImmediate::CopyBufferToTexture(RHIBufferRef src, uint64_t srcOffset, RHITextureRef dst, TextureSubresourceLayers dstSubresource)
+{
+    ADD_COMMAND_IMMEDIATE(CopyBufferToTexture, src, srcOffset, dst, dstSubresource);
+}
+
+void RHICommandListImmediate::CopyBuffer(RHIBufferRef src, uint64_t srcOffset, RHIBufferRef dst, uint64_t dstOffset, uint64_t size)
+{
+    ADD_COMMAND_IMMEDIATE(CopyBuffer, src, srcOffset, dst, dstOffset, size);
+}
+
+void RHICommandListImmediate::CopyTexture(RHITextureRef src, TextureSubresourceLayers srcSubresource, RHITextureRef dst, TextureSubresourceLayers dstSubresource)
+{
+    ADD_COMMAND_IMMEDIATE(CopyTexture, src, srcSubresource, dst, dstSubresource);
+}
+
+void RHICommandListImmediate::GenerateMips(RHITextureRef src)
+{
+    ADD_COMMAND_IMMEDIATE(GenerateMips, src);   
+}
 
 
 void RHICommandBeginCommand::Execute(RHICommandContextRef context) { context->BeginCommand(); }
@@ -219,11 +287,13 @@ void RHICommandSetViewport::Execute(RHICommandContextRef context) { context->Set
 
 void RHICommandSetScissor::Execute(RHICommandContextRef context) { context->SetScissor(min, max); }
 
+void RHICommandSetDepthBias::Execute(RHICommandContextRef context) { context->SetDepthBias(constantBias, slopeBias, clampBias); }
+
 void RHICommandSetGraphicsPipeline::Execute(RHICommandContextRef context) { context->SetGraphicsPipeline(graphicsState); }
 
 void RHICommandSetComputePipeline::Execute(RHICommandContextRef context) { context->SetComputePipeline(computeState); }
 
-void RHICommandPushConstants::Execute(RHICommandContextRef context) { context->PushConstants(data, size, frequency); }
+void RHICommandPushConstants::Execute(RHICommandContextRef context) { context->PushConstants(&data[0], size, frequency); }
 
 void RHICommandBindDescriptorSet::Execute(RHICommandContextRef context) { context->BindDescriptorSet(descriptor, set); }
 
@@ -243,3 +313,20 @@ void RHICommandDrawIndirect::Execute(RHICommandContextRef context) { context->Dr
 
 void RHICommandDrawIndexedIndirect::Execute(RHICommandContextRef context) { context->DrawIndexedIndirect(argumentBuffer, offset, drawCount); }
 
+void RHICommandImGuiCreateFontsTexture::Execute(RHICommandContextRef context) { context->ImGuiCreateFontsTexture(); }
+
+void RHICommandImGuiRenderDrawData::Execute(RHICommandContextRef context) { context->ImGuiRenderDrawData(); }
+
+void RHICommandImmediateTextureBarrier::Execute(RHICommandContextImmediateRef context) { context->TextureBarrier(barrier); }
+
+void RHICommandImmediateBufferBarrier::Execute(RHICommandContextImmediateRef context) { context->BufferBarrier(barrier); }
+
+void RHICommandImmediateCopyTextureToBuffer::Execute(RHICommandContextImmediateRef context) { context->CopyTextureToBuffer(src, srcSubresource, dst, dstOffset); }
+
+void RHICommandImmediateCopyBufferToTexture::Execute(RHICommandContextImmediateRef context) { context->CopyBufferToTexture(src, srcOffset, dst, dstSubresource); }
+
+void RHICommandImmediateCopyBuffer::Execute(RHICommandContextImmediateRef context) { context->CopyBuffer(src, srcOffset, dst, dstOffset, size); }
+
+void RHICommandImmediateCopyTexture::Execute(RHICommandContextImmediateRef context) { context->CopyTexture(src, srcSubresource, dst, dstSubresource); }
+
+void RHICommandImmediateGenerateMips::Execute(RHICommandContextImmediateRef context) { context->GenerateMips(src); }

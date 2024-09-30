@@ -1,0 +1,131 @@
+#version 460
+
+layout(set = 0, binding = 0, rgba16f)   uniform image2D IN_COLOR;	   
+layout(set = 0, binding = 1, rgba8)     uniform image2D OUT_COLOR;   
+
+struct ExposureSetting
+{             
+    float minLog2Luminance;             //最小亮度，对数
+    float inverseLuminanceRange;        //亮度范围，对数倒数
+    float luminanceRange;               //亮度范围，对数
+    float numPixels;                    //总像素数
+    float timeCoeff;                    //时间加权
+    float _padding[3];
+};
+layout(set = 0, binding = 2) buffer EXPOSURE_DATA
+{
+    ExposureSetting setting;     
+    float luminance;                     // 计算得到的平均亮度
+    float adaptedLuminance;              // 多帧渐进的亮度
+    float _padding[2];   
+    uint histogramBuffer[256];           // 直方图数组 
+    uint readBackHistogramBuffer[256];   // 回读用的数组 
+};
+
+// layout(set = 1, binding = 2) uniform sampler2D colorLUT;
+
+layout(push_constant) uniform PostProcessingSetting {
+    float exposure;
+	float saturation;
+	float contrast;
+    uint mode;
+} SETTING;
+
+//CryEngine 2
+vec3 CEToneMapping(vec3 color, float adapted_lum) 
+{
+    return vec3(1.0) - exp(-adapted_lum * color);
+}
+
+//Uncharted 2 - filmic tone mapping
+vec3 F(vec3 x)
+{
+	const float A = 0.22f;
+	const float B = 0.30f;
+	const float C = 0.10f;
+	const float D = 0.20f;
+	const float E = 0.01f;
+	const float F = 0.30f;
+ 
+	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+
+vec3 Uncharted2ToneMapping(vec3 color, float adapted_lum)
+{
+	const float WHITE = 11.2f;
+	return F(1.6f * adapted_lum * color) / F(vec3(WHITE));
+}
+
+//ACES
+vec3 ACESToneMapping(vec3 color, float adapted_lum)
+{
+	const float A = 2.51f;
+	const float B = 0.03f;
+	const float C = 2.43f;
+	const float D = 0.59f;
+	const float E = 0.14f;
+
+	color *= adapted_lum;
+	return (color * (A * color + B)) / (color * (C * color + D) + E);
+}
+
+//饱和度
+vec3 SaturationColor(vec3 color, float saturation)
+{
+     vec3 luminanceWeighting = vec3(0.2125, 0.7154, 0.0721);
+     float luminance = dot(color, luminanceWeighting);
+
+     //灰度校准向量
+     vec3 greyScaleColor = vec3(luminance);
+
+     return mix(greyScaleColor, color, saturation);
+}
+
+//对比度
+vec3 ContrastColor(vec3 color, float contrast)
+{
+    return (color - vec3(0.5)) * contrast + vec3(0.5);
+}
+
+#define THREAD_SIZE_X 16
+#define THREAD_SIZE_Y 16
+#define THREAD_SIZE_Z 1
+layout (local_size_x = THREAD_SIZE_X, 
+		local_size_y = THREAD_SIZE_Y, 
+		local_size_z = THREAD_SIZE_Z) in;
+void main() 
+{
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	vec3 color = imageLoad(IN_COLOR, pixel).rgb;
+
+	float finalExposure = SETTING.exposure / adaptedLuminance;	//使得整个画面的输出光照接近setting.exposure，例如0.5
+	
+	if(SETTING.mode == 0) color = CEToneMapping(color, finalExposure); 
+	if(SETTING.mode == 1) color = Uncharted2ToneMapping(color, finalExposure); 
+	if(SETTING.mode == 2) color = ACESToneMapping(color, finalExposure); 
+
+	//LUT是2D纹理，要采样两次手动做插值  
+	//
+	// if(SETTING.lut > 0.0f)
+	// {
+	// 	color 				= clamp(color, vec3(0.08f), vec3(0.92f));	//采样在边缘还有问题 picolo教程说是mipmap的问题？
+
+	// 	ivec2 lut_tex_size 	= textureSize(colorLUT, 0);
+
+	// 	float b 			= color.b * lut_tex_size.y;	//b通道计算offset
+	// 	float b_floor 		= floor(b);
+	// 	float b_ceil 		= ceil(b);
+
+	// 	vec3 color_floor 	= texture(colorLUT, vec2((b_floor + color.r) / lut_tex_size.y, color.g)).rgb;
+	// 	vec3 color_ceil 	= texture(colorLUT, vec2((b_ceil + color.r) / lut_tex_size.y, color.g)).rgb;
+	// 	color_floor 		= pow(color_floor, vec3(1.0/2.2));   
+	// 	color_ceil 			= pow(color_ceil, vec3(1.0/2.2));   
+
+	// 	color = mix(color_floor, color_ceil, b - b_floor);
+	// }
+
+	color = SaturationColor(color, SETTING.saturation);
+	color = ContrastColor(color, SETTING.contrast);
+
+	imageStore(OUT_COLOR, pixel, vec4(color, 1.0f));
+}

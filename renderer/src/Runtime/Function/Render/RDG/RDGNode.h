@@ -30,6 +30,8 @@ typedef struct RDGPassContext
     RDGBuilder* builder;
     std::array<RHIDescriptorSetRef, MAX_DESCRIPTOR_SETS> descriptors;
 
+    uint32_t passIndex = 0;
+
 } RDGPassContext;
 
 typedef std::function<void(RDGPassContext)> RDGPassExecuteFunc;
@@ -135,7 +137,7 @@ protected:
 
     std::vector<RHITextureViewRef> pooledViews;             // 动态分配的池化资源，执行完毕后返回资源池
     std::vector<std::pair<RHIDescriptorSetRef, uint32_t>> pooledDescriptorSets;
-    
+
     friend class RDGBuilder;
 };
 typedef RDGPassNode* RDGPassNodeRef;
@@ -150,6 +152,7 @@ public:
 
     RDGRenderPassHandle GetHandle() { return RDGRenderPassHandle(ID()); } 
 private:
+    uint32_t passIndex = 0;
     RDGPassExecuteFunc execute;
 
     friend class RDGRenderPassBuilder;
@@ -166,6 +169,7 @@ public:
 
     RDGComputePassHandle GetHandle() { return RDGComputePassHandle(ID()); } 
 private:
+    uint32_t passIndex = 0;
     RDGPassExecuteFunc execute;
 
     friend class RDGComputePassBuilder;

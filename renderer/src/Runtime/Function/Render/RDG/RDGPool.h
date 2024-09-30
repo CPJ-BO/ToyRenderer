@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Function/Render/RHI/RHIStructs.h"
+#include "MurmurHash2.h"
 
 #include <cstdint>
 #include <functional>
@@ -48,9 +49,7 @@ public:
 
         struct Hash {
             size_t operator()(const Key& a) const {
-                return  std::hash<uint32_t>()(a.memoryUsage) ^
-                        (std::hash<uint32_t>()(a.type) << 1) ^ 
-                        (std::hash<uint32_t>()(a.creationFlag) << 2);
+                return MurmurHash64A(&a, sizeof(Key), 0);        
             }
         };
     };
@@ -88,47 +87,19 @@ public:
     struct Key
     {
         Key(const RHITextureInfo& info) 
-        : format(info.format)
-        , extent(info.extent)
-        , arrayLayers(info.arrayLayers)
-        , mipLevels(info.mipLevels)
-        , memoryUsage(info.memoryUsage)
-        , type(info.type)
-        , creationFlag(info.creationFlag)
+        : info(info)
         {}
 
-        TextureFormat format;
-        Extent3D extent;    
-        uint32_t arrayLayers;
-        uint32_t mipLevels;
-
-        MemoryUsage memoryUsage;
-        ResourceType type;
-
-        TextureCreationFlags creationFlag;
+        RHITextureInfo info;
 
         friend bool operator== (const Key& a, const Key& b)
         {
-            return  a.format == b.format &&
-                    a.extent == b.extent &&
-                    a.arrayLayers == b.arrayLayers &&
-                    a.mipLevels == b.mipLevels &&
-                    a.memoryUsage == b.memoryUsage &&
-                    a.type == b.type &&
-                    a.creationFlag == b.creationFlag;
+            return  a.info == b.info;
         }
 
         struct Hash {
             size_t operator()(const Key& a) const {
-                return  std::hash<uint32_t>()(a.format) ^
-                        (std::hash<uint32_t>()(a.extent.width) << 1) ^
-                        (std::hash<uint32_t>()(a.extent.height) << 2) ^
-                        (std::hash<uint32_t>()(a.extent.depth) << 3) ^
-                        (std::hash<uint32_t>()(a.arrayLayers) << 4) ^
-                        (std::hash<uint32_t>()(a.mipLevels) << 5) ^
-                        (std::hash<uint32_t>()(a.memoryUsage) << 6) ^
-                        (std::hash<uint32_t>()(a.type) << 7) ^ 
-                        (std::hash<uint32_t>()(a.creationFlag) << 8);
+                return MurmurHash64A(&a, sizeof(Key), 0);  
             }
         };
     };
@@ -165,36 +136,19 @@ public:
     struct Key
     {
         Key(const RHITextureViewInfo& info) 
-        : texture(info.texture)
-        , format(info.format)
-        , viewType(info.viewType)
-        , subresource(info.subresource)
+        : info(info)
         {}
 
-        RHITextureRef texture;
-        TextureFormat format;			
-        TextureViewType viewType;
-
-        TextureSubresourceRange subresource;	
+        RHITextureViewInfo info;	
 
         friend bool operator== (const Key& a, const Key& b)
         {
-            return  a.texture.get() == b.texture.get() &&
-                    a.format == b.format &&
-                    a.viewType == b.viewType &&
-                    a.subresource == b.subresource;
+            return  a.info == b.info;
         }
 
         struct Hash {
             size_t operator()(const Key& a) const {
-                return  std::hash<uint64_t>()((uint64_t)a.texture.get()) ^
-                        (std::hash<uint32_t>()(a.format) << 1) ^
-                        (std::hash<uint32_t>()(a.viewType) << 2) ^
-                        (std::hash<uint32_t>()(a.subresource.aspect) << 3) ^
-                        (std::hash<uint32_t>()(a.subresource.baseArrayLayer) << 4) ^
-                        (std::hash<uint32_t>()(a.subresource.layerCount) << 5) ^
-                        (std::hash<uint32_t>()(a.subresource.baseMipLevel) << 6) ^
-                        (std::hash<uint32_t>()(a.subresource.levelCount) << 7);
+                return MurmurHash64A(&a.info, sizeof(RHITextureViewInfo), 0);
             }
         };
     };
@@ -239,32 +193,13 @@ public:
 
         friend bool operator== (const Key& a, const Key& b)
         {
-            if(a.entries.size() != b.entries.size()) return false;
-            for (uint32_t i = 0; i < a.entries.size(); i++) 
-            {
-                if(a.entries[i] != b.entries[i]) return false;
-            }
-            return a.set == b.set;
+            return  a.entries == b.entries&& 
+                    a.set == b.set;
         }
-
-        struct HashEntry {
-            size_t operator()(ShaderResourceEntry entry) const {
-                return std::hash<uint32_t>()(entry.set) ^
-                       (std::hash<uint32_t>()(entry.binding) << 1) ^ 
-                       (std::hash<uint32_t>()(entry.size) << 2) ^ 
-                       (std::hash<uint32_t>()(entry.frequency) << 3) ^ 
-                       (std::hash<uint32_t>()(entry.type) << 4);
-            }
-        };
 
         struct HashEntries {
             size_t operator()(std::vector<ShaderResourceEntry> entries) const {
-                size_t ret = 0;
-                for (uint32_t i = 0; i < entries.size(); i++) {
-                    ret ^= HashEntry()(entries[i]);
-                    ret = ret << 1;
-                }
-                return ret;
+                return MurmurHash64A(entries.data(), entries.size() * sizeof(ShaderResourceEntry), 0);  
             }
         };
 

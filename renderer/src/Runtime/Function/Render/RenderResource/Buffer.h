@@ -4,6 +4,7 @@
 #include "Core/Util/IndexAlloctor.h"
 #include "Function/Render/RHI/RHI.h"
 #include "Function/Render/RHI/RHIStructs.h"
+#include "RenderStructs.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -59,7 +60,7 @@ RHIBackendRef GlobalRHIBackend();   // TODO 避免模板类的循环引用
 class VertexBuffer
 {
 public:
-    VertexBuffer() = default;
+    VertexBuffer();
     ~VertexBuffer();
 
     void SetPosition(const std::vector<Vec3>& position);
@@ -78,13 +79,15 @@ public:
     RHIBufferRef boneIndexBuffer;
     RHIBufferRef boneWeightBuffer;
 
-    uint32_t positionID = 0;
-    uint32_t normalID = 0;
-    uint32_t tangentID = 0;
-    uint32_t texCoordID = 0;
-    uint32_t colorID = 0;
-    uint32_t boneIndexID = 0;
-    uint32_t boneWeightID = 0;
+    uint32_t vertexID = 0;
+    VertexInfo vertexInfo = {
+        .positionID = 0,
+        .normalID = 0,
+        .texCoordID = 0,
+        .colorID = 0,
+        .boneIndexID = 0,
+        .boneWeightID = 0
+    };
 
     inline uint32_t VertexNum() { return vertexNum; }
 
@@ -120,20 +123,33 @@ template<typename Type>
 class Buffer
 {
 public:
-    Buffer()
+    Buffer(ResourceType type = RESOURCE_TYPE_RW_BUFFER | RESOURCE_TYPE_UNIFORM_BUFFER)
     {
         buffer = GlobalRHIBackend()->CreateBuffer({
             .size = sizeof(Type),
             .memoryUsage = MEMORY_USAGE_CPU_TO_GPU,
-            .type = RESOURCE_TYPE_RW_BUFFER | RESOURCE_TYPE_UNIFORM_BUFFER,      
+            .type = type,      
             .creationFlag = BUFFER_CREATION_PERSISTENT_MAP});
     }
 
     void SetData(const Type& data)
     {
         memcpy(buffer->Map(), &data, sizeof(Type));
-        GlobalRHIBackend()->GetImmediateCommand()->BufferBarrier(
-            {buffer, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_UNORDERED_ACCESS});
+    }
+
+    void SetData(const void* data, uint32_t size, uint32_t offset = 0)
+    {
+        memcpy((uint8_t*)buffer->Map() + offset, data, size);
+    }
+
+    void GetData(Type* data)
+    {
+        memcpy(data, buffer->Map(), sizeof(Type));
+    }
+
+    void GetData(void* data, uint32_t size, uint32_t offset = 0)
+    {
+        memcpy(data, (uint8_t*)buffer->Map() + offset, size);
     }
 
     RHIBufferRef buffer;
@@ -143,34 +159,30 @@ template<typename Type, size_t arraySize>
 class ArrayBuffer
 {
 public:
-    ArrayBuffer()
+    ArrayBuffer(ResourceType type = RESOURCE_TYPE_RW_BUFFER | RESOURCE_TYPE_UNIFORM_BUFFER | RESOURCE_TYPE_INDIRECT_BUFFER)
     : idAlloctor(arraySize)
     {
         buffer = GlobalRHIBackend()->CreateBuffer({
             .size = arraySize * sizeof(Type),
             .memoryUsage = MEMORY_USAGE_CPU_TO_GPU,
-            .type = RESOURCE_TYPE_RW_BUFFER | RESOURCE_TYPE_UNIFORM_BUFFER | RESOURCE_TYPE_INDIRECT_BUFFER,      
+            .type = type,      
             .creationFlag = BUFFER_CREATION_PERSISTENT_MAP});
     }
 
     void SetData(const Type& data, uint32_t index)
     {
         memcpy((Type*)buffer->Map() + index, &data, sizeof(Type));
-        GlobalRHIBackend()->GetImmediateCommand()->BufferBarrier(
-            {buffer, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_UNORDERED_ACCESS, sizeof(Type) * index, sizeof(Type)});
     }
 
     void SetData(const std::vector<Type>& data, uint32_t index)
     {
         memcpy((Type*)buffer->Map() + index, data.data(), data.size() * sizeof(Type));
-        GlobalRHIBackend()->GetImmediateCommand()->BufferBarrier(
-            {buffer, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_UNORDERED_ACCESS, sizeof(Type) * index, data.size() * sizeof(Type)});
     }
 
     uint32_t Allocate()                             { return idAlloctor.Allocate(); }
-    IndexRange AllocateRange(uint32_t size)         { return idAlloctor.AllocateRange(size); }
+    IndexRange Allocate(uint32_t size)              { return idAlloctor.Allocate(size); }
     void Release(uint32_t index)                    { idAlloctor.Release(index); }
-    void ReleaseRange(IndexRange range)             { idAlloctor.ReleaseRange(range); }
+    void Release(IndexRange range)                  { idAlloctor.Release(range); }
 
     RHIBufferRef buffer;
 

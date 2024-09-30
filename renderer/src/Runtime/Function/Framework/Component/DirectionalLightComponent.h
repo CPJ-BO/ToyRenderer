@@ -17,19 +17,28 @@ public:
 	~DirectionalLightComponent() {};
 
 	virtual void Init() override;
-
 	virtual void Tick(float deltaTime) override;
 
-	inline Frustum GetFrustum(int index)		{ return lightInfos[index].frustum; }
+	inline Frustum GetFrustum(int index)							{ return lightInfos[index].frustum; }
 
-	virtual ComponentType GetType() override	{ return DIRECTIONAL_LIGHT_COMPONENT; }
+	virtual std::string GetTypeName() override						{ return "Directional Light Component"; }
+	virtual ComponentType GetType() override						{ return DIRECTIONAL_LIGHT_COMPONENT; }
+
+	bool ShouldUpdate(uint32_t cascade)								{ return updateCnts[cascade] == 0; }
+	float GetConstantBias()											{ return constantBias; }
+	float GetSlopeBias()											{ return slopeBias; }
+
+	void SetColor(Vec3 color)										{ this->color = color; } 
+	void SetIntencity(float intencity)								{ this->intencity = intencity; } 
+	void SetCascadeSplit(float cascadeSplit)						{ this->cascadeSplitLambda = cascadeSplit; } 
+	void SetUpdateFrequency(uint32_t cascade, int32_t frequency)	{ updateFrequences[cascade] = frequency; } 
 
 private:
 	Vec3 color = Vec3::Ones();
-    float intencity = 0.7f;
-	float cascadeSplitLambda = 0.8f;	//在对数划分和均匀划分间的加权权值
-	std::array<uint32_t, DIRECTIONAL_SHADOW_CASCADE_LEVEL> updateFrequences = { 0 };	//设置每级cascade更新频率
-	std::array<uint32_t, DIRECTIONAL_SHADOW_CASCADE_LEVEL> updateCnts = { 0 };
+    float intencity = 2.0f;
+	float cascadeSplitLambda = 0.95f;	//在对数划分和均匀划分间的加权权值
+	std::array<int32_t, DIRECTIONAL_SHADOW_CASCADE_LEVEL> updateFrequences = { 0 };	//设置每级cascade更新频率
+	std::array<int32_t, DIRECTIONAL_SHADOW_CASCADE_LEVEL> updateCnts = { 0 };
 	float constantBias = 1.0f;          //bias，分为固定偏移和斜率偏移两个
 	float slopeBias = 5.0f;
 	float fogScattering = 0.02f;
@@ -41,9 +50,9 @@ private:
 
 	void UpdateMatrix();
 
-	void UpdateCascades(int index);
+	void UpdateCascades(); 
 
-    void UpdateLightInfo();
+	void UpdateLightInfo();
 
 private:
     BeginSerailize()
@@ -57,4 +66,7 @@ private:
     SerailizeEntry(slopeBias)
     SerailizeEntry(fogScattering)
     EndSerailize
+
+	EnableComponentEditourUI()
+	friend class RenderLightManager;
 };

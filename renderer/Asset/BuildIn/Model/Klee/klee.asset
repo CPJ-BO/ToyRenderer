@@ -1,0 +1,43 @@
+{
+    "value0": {
+        "polymorphic_id": 2147483649,
+        "polymorphic_name": "Model",
+        "ptr_wrapper": {
+            "id": 2147483649,
+            "data": {
+                "Asset": {
+                    "uid": {
+                        "str": "afa6b03c-e277-4cb4-8e8e-5ab473a32325"
+                    }
+                },
+                "AssetBinder": {
+                    "assetMap": [
+                        {
+                            "key": "cache",
+                            "value": {
+                                "str": "00000000-0000-0000-0000-000000000000"
+                            }
+                        }
+                    ],
+                    "assetArrayMap": [
+                        {
+                            "key": "materials",
+                            "value": []
+                        }
+                    ]
+                },
+                "path": "Asset/BuildIn/Model/Klee/klee.fbx",
+                "processSetting": {
+                    "smoothNormal": false,
+                    "flipUV": false,
+                    "loadMaterials": false,
+                    "tangentSpace": true,
+                    "generateBVH": false,
+                    "generateCluster": false,
+                    "generateVirtualMesh": false,
+                    "cacheCluster": false
+                }
+            }
+        }
+    }
+}

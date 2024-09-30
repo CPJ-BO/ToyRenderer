@@ -5,30 +5,35 @@
 #include "Function/Framework/Component/TransformComponent.h"
 #include "Function/Framework/Scene/Scene.h"
 #include "Function/Global/Definations.h"
+#include "Function/Global/EngineContext.h"
 #include "TryGetComponent.h"
 
 #include <algorithm>
 #include <array>
+#include <iostream>
 #include <memory>
+#include <ostream>
 
 CEREAL_REGISTER_TYPE(DirectionalLightComponent)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(Component, DirectionalLightComponent)
 
 void DirectionalLightComponent::Init()
 {
+	Component::Init();
+	
 	for (int i = 0; i < 4; i++) updateCnts[i] = updateFrequences[i];	//初始时先统一绘制一轮
 }
 
 void DirectionalLightComponent::Tick(float deltaTime)
 { 
-	//cascade的更新计数
+	// cascade的更新计数
 	for (int i = 0; i < DIRECTIONAL_SHADOW_CASCADE_LEVEL; i++)
 	{	
 		updateCnts[i]++;    //检测更新频率
 		if (updateCnts[i] >= updateFrequences[i]) updateCnts[i] = 0;
 	}
 
-	UpdateLightInfo();
+	// UpdateLightInfo();
 }
 
 void DirectionalLightComponent::UpdateMatrix()
@@ -46,17 +51,15 @@ void DirectionalLightComponent::UpdateMatrix()
     }
 }
 
-void DirectionalLightComponent::UpdateCascades(int index)
+void DirectionalLightComponent::UpdateCascades()
 {
     // 获取相机
     std::shared_ptr<CameraComponent> camera;
-	if(entity.lock() && entity.lock()->GetScene().lock())
+	if(GetEntity() && GetEntity()->GetScene())
 	{
-		camera = entity.lock()->GetScene().lock()->GetActiveCamera();
+		camera = GetEntity()->GetScene()->GetActiveCamera();
 	}
 	if(!camera) return;
-
-	
 
 	std::array<float, DIRECTIONAL_SHADOW_CASCADE_LEVEL> cascadeSplits;
 
@@ -142,7 +145,7 @@ void DirectionalLightComponent::UpdateCascades(int index)
 		Mat4 lightOrthoMatrix = Math::Ortho(minExtents.x(), maxExtents.x(), minExtents.y(), maxExtents.y(), 0.0f, maxExtents.z() - minExtents.z());
 
 		// 最后存储各种信息，只有当即将被更新阴影贴图时才会写入数据
-		if (updateCnts[i] >= updateFrequences[i] - 1)
+		if (updateCnts[i] == 0)
 		{
 			lightInfos[i].depth = (camera->GetNear() + splitDist * clipRange);
 			lightInfos[i].view = lightViewMatrix;
@@ -155,6 +158,8 @@ void DirectionalLightComponent::UpdateCascades(int index)
 			//更新裁切视锥
 			lightInfos[i].frustum = CreateFrustumFromMatrix(lightOrthoMatrix * lightViewMatrix, -1.0, 1.0, -1.0, 1.0, 0.0, 1.0);
 			lightInfos[i].sphere = BoundingSphere(frustumCenter, radius);
+
+			EngineContext::RenderResource()->SetDirectionalLightInfo(lightInfos[i], i);
 		}
 		lastSplitDist = cascadeSplits[i];
 	}
@@ -164,5 +169,5 @@ void DirectionalLightComponent::UpdateLightInfo()
 {
 	UpdateMatrix();
 
-	UpdateCascades(0);  // TODO
+	UpdateCascades();  
 }

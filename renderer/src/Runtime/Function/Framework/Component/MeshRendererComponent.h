@@ -1,39 +1,72 @@
 #pragma once
 
+#include "Core/Math/Math.h"
 #include "Core/Serialize/Serializable.h"
 #include "Component.h"
+#include "Function/Render/RenderPass/MeshPass.h"
+#include "Function/Render/RenderResource/Drawable.h"
+#include "Function/Render/RenderResource/Material.h"
+#include "Function/Render/RenderResource/Model.h"
+#include "Function/Render/RenderResource/RenderStructs.h"
+#include <cstdint>
+#include <vector>
 
+enum MeshRendererMode
+{
+	RENDER_MODE_DEFAULT = 0,
+	RENDER_MODE_CLUSTER,
+	RENDER_MODE_VIRTUAL_MESH,
 
+	RENDER_MODE_MAX,//
+};
 
-
-
-
-// 剔除系统是对各个meshpass做处理 单独处理？   如何封装材质  封装单个绘制任务
-// 
-
-// 每个FSceneRenderer创建一个FMeshElementCollector负责收集所有view的所有待绘制的meshbatch
-// 每个view会有多个meshpass，
-// 每个meshpass对应一个FMeshPassProcessor负责把当前pass需要绘制的meshbatch转化为meshdrawcommand
-// 收集meshbatch会调用meshcomponent的动态添加函数（也有静态的，用不同的流程处理）
-// 绘制命令的排序，合并等发生在创建meshdrawcommand后
-// 最终会调用FMeshDrawCommand::SubmitDraw将FMeshDrawCommand转换为RHICmdList中的状态绑定和drawcall指令
-
-// MeshRendererComponent仅提供渲染接口的声明,由子类实现
-class MeshRendererComponent : public Component
+class MeshRendererComponent : public Component, public AssetBinder, public Drawable
 {
 public:
 	MeshRendererComponent() = default;
-	virtual ~MeshRendererComponent() {};
+	~MeshRendererComponent();
 
+	virtual void Load() override;
+	virtual void Save() override;
 	virtual void Init() override;
-
 	virtual void Tick(float deltaTime) override;
 
+	virtual std::string GetTypeName() override		{ return "Mesh Renderer Component"; }
 	virtual ComponentType GetType() override	    { return MESH_RENDERER_COMPONENT; }
-    
+
+	void SetModel(ModelRef model); 					
+	ModelRef GetModel()								{ return model; }
+
+	void SetMaterial(MaterialRef material, uint32_t index = 0);
+	void SetMaterials(std::vector<MaterialRef> materials, uint32_t firstIndex = 0);
+	MaterialRef GetMaterial(uint32_t index);			
+
+	virtual void CollectDrawBatch(std::vector<DrawBatch>& batches) override;
+
+private:
+	ModelRef model;
+    std::vector<MaterialRef> materials;
+	std::vector<ObjectInfo> objectInfos;
+	std::vector<uint32_t> objectIDs;
+
+	Mat4 prevModel = Mat4::Identity();
+
+	bool castShadow;					//是否产生阴影（加入shadow map render pass）
+	MeshRendererMode renderMode;		//渲染模式
+
+	int32_t materilalInspectMode = 1;		//材质检视模式
+	int32_t materilalInspectIndex = 0;		//材质检视下标
+
 private:
     BeginSerailize()
     SerailizeBaseClass(Component)
+    SerailizeBaseClass(AssetBinder)
+	SerailizeEntry(castShadow)
+	SerailizeEntry(renderMode)
+	//SerailizeAssetEntry(model)
+	//SerailizeAssetArrayEntry(materials)
     EndSerailize
+	
+	EnableComponentEditourUI()
 };
 

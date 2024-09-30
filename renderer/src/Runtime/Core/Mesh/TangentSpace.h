@@ -11,23 +11,23 @@ public:
     void Generate(Mesh* mesh);
 
 private:
-    SMikkTSpaceInterface m_interface{};
-    SMikkTSpaceContext context{};
+    SMikkTSpaceInterface interface = {};
+    SMikkTSpaceContext context = {};
 
-    static int get_vertex_index(const SMikkTSpaceContext* context, int iFace, int iVert);
+    static int GetVertexIndex(const SMikkTSpaceContext* context, int iFace, int iVert);
 
-    static int get_num_faces(const SMikkTSpaceContext* context);
-    static int get_num_vertices_of_face(const SMikkTSpaceContext* context, int iFace);
-    static void get_position(const SMikkTSpaceContext* context, float outpos[],
+    static int GetNumFaces(const SMikkTSpaceContext* context);
+    static int GetNumVerticesOfFace(const SMikkTSpaceContext* context, int iFace);
+    static void GetPosition(const SMikkTSpaceContext* context, float outpos[],
         int iFace, int iVert);
 
-    static void get_normal(const SMikkTSpaceContext* context, float outnormal[],
+    static void GetNormal(const SMikkTSpaceContext* context, float outnormal[],
         int iFace, int iVert);
 
-    static void get_tex_coords(const SMikkTSpaceContext* context, float outuv[],
+    static void GetTexcoords(const SMikkTSpaceContext* context, float outuv[],
         int iFace, int iVert);
 
-    static void set_tspace_basic(const SMikkTSpaceContext* context,
+    static void SetTspaceBasic(const SMikkTSpaceContext* context,
         const float tangentu[],
         float fSign, int iFace, int iVert);
 

@@ -1,5 +1,6 @@
 #include "TimeScope.h"
 #include "Core/Log/log.h"
+#include "Platform/HAL/PlatformProcess.h"
 
 #include <memory>
 
@@ -7,7 +8,7 @@ void TimeScope::Clear()
 {
     begin = std::chrono::steady_clock::now(); 
     end = std::chrono::steady_clock::now(); 
-    duration = std::chrono::nanoseconds::zero();
+    duration = std::chrono::microseconds::zero();
 }
 
 void TimeScope::Begin() 
@@ -18,67 +19,72 @@ void TimeScope::Begin()
 void TimeScope::End()
 {
     end = std::chrono::steady_clock::now(); 
-    duration = end - begin;
+    auto diff = end - begin;
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(diff);
+}
+
+void TimeScope::EndAfterMilliSeconds(float milliSecondes)
+{
+    End();
+    if(GetMilliSeconds() < milliSecondes)
+    {
+        PlatformProcess::Sleep((milliSecondes - GetMilliSeconds()) / 1000.0f);
+    }
+    End();
 }
 
 float TimeScope::GetMicroSeconds()
 {
-    return duration.count() / 1000.0f;
+    return (float)duration.count();
 }
 
 float TimeScope::GetMilliSeconds()
 {
-    return duration.count() / 1000000.0f;
+    return (float)duration.count() / 1000;
 }
 
 float TimeScope::GetSeconds()
 {
-    return duration.count() / 1000000000.0f;
+    return (float)duration.count() / 1000000;
 }
 
 void TimeScopes::PushScope(std::string name)
 {
     std::shared_ptr<TimeScope> newScope = std::make_shared<TimeScope>();
     newScope->name = name;
+    newScope->depth = depth;
     newScope->Begin();
 
-    if(depth == 0)
-    {
-        roots.push_back(newScope);
-        current = newScope;     
-    }
-    else 
-    {
-        newScope->parent = current;
-        current->children.push_back(newScope);
-        current = newScope;
-    }
+    scopes.push_back(newScope); 
+    runningScopes.push(newScope);
 
     depth++;
 }
 
 void TimeScopes::PopScope()
 {
-    if(depth <= 0) 
+    if(runningScopes.empty()) 
     {
         LOG_FATAL("Time scope popping is not valid!");
         return;
     }
 
-    current->End();
-    current = current->parent;
+    auto scope = runningScopes.top();
+    runningScopes.pop();
+    scope->End();
+
     depth--;
 }
 
 void TimeScopes::Clear() 
 { 
-    roots.clear();
-    current = nullptr; 
+    scopes.clear();
+    runningScopes = {};
     depth = 0; 
 };
 
 const std::vector<std::shared_ptr<TimeScope>>& TimeScopes::GetScopes()
 {
     if(depth != 0) LOG_FATAL("Time scope recording is not complete!");
-    return roots;
+    return scopes;
 }

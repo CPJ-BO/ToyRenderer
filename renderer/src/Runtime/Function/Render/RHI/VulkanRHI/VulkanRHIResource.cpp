@@ -5,6 +5,7 @@
 #include "Function/Render/RHI/RHIStructs.h"
 #include "Core/Log/Log.h"
 
+#include <regex>
 #include <spirv_reflect.h>
 #include <memory>
 #include <algorithm>
@@ -60,8 +61,8 @@ VulkanRHISwapchain::VulkanRHISwapchain(const RHISwapchainInfo& info, VulkanRHIBa
     vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &size, availablePresentModes.data());
 
     // 交换链基本信息
-    VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(VulkanUtil::TextureFormatToVkFormat(info.format));
-    TextureFormat targetFormat = VulkanUtil::VkFormatToTextureFormat(surfaceFormat.format);
+    VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(VulkanUtil::RHIFormatToVkFormat(info.format));
+    RHIFormat targetFormat = VulkanUtil::VkFormatToRHIFormat(surfaceFormat.format);
     if(targetFormat != info.format)
     {
         this->info.format = targetFormat;
@@ -158,6 +159,7 @@ VulkanRHISwapchain::VulkanRHISwapchain(const RHISwapchainInfo& info, VulkanRHIBa
         // 留着RESOURCE_STATE_UNDEFINED之后处理其实也可以，可加可不加
         backend.GetImmediateCommand()->TextureBarrier(
             {texture, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_PRESENT, {TEXTURE_ASPECT_COLOR, 0, 1, 0, 1}});
+        backend.GetImmediateCommand()->Flush();
     }
 }
 
@@ -351,6 +353,13 @@ void VulkanRHIBuffer::UnMap()
     }
 }
 
+// void VulkanRHIBuffer::FlushRange(uint32_t size, uint32_t offset)
+// {
+//     uint32_t realSize = (size == 0) ? info.size - offset : size;
+//     //vkFlushMappedMemoryRanges()
+//     vmaFlushAllocation(Backend()->GetMemoryAllocator(), allocation, offset, realSize);
+// }
+
 void VulkanRHIBuffer::Destroy()
 {
     vmaDestroyBuffer(Backend()->GetMemoryAllocator(), handle, allocation);
@@ -360,6 +369,7 @@ VulkanRHITexture::VulkanRHITexture(const RHITextureInfo& info, VulkanRHIBackend&
 : RHITexture(info)
 {
     TextureAspectFlags aspects =    IsDepthStencilFormat(info.format) ? TEXTURE_ASPECT_DEPTH_STENCIL :
+                                    IsDepthFormat(info.format) ? TEXTURE_ASPECT_DEPTH :
                                     IsStencilFormat(info.format) ? TEXTURE_ASPECT_STENCIL : TEXTURE_ASPECT_COLOR;
     defaultRange = {aspects, 0, info.mipLevels, 0, info.arrayLayers};
     defaultLayers = {aspects, 0, 0, info.arrayLayers};
@@ -370,11 +380,11 @@ VulkanRHITexture::VulkanRHITexture(const RHITextureInfo& info, VulkanRHIBackend&
         return;
     }
 
-    VkFormat format = VulkanUtil::TextureFormatToVkFormat(info.format);
+    VkFormat format = VulkanUtil::RHIFormatToVkFormat(info.format);
 
     VkImageUsageFlags usage = VulkanUtil::ResourceTypeToImageUsage(info.type);
-    if(IsDepthStencilFormat(info.format))           usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    else if(info.type & RESOURCE_TYPE_RENDER_TARGET)     usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if(IsDepthFormat(info.format) || IsStencilFormat(info.format))   usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    else if(info.type & RESOURCE_TYPE_RENDER_TARGET)                                usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     
 
     VkImageType type =  info.extent.depth > 1 ? VK_IMAGE_TYPE_3D :
@@ -444,7 +454,7 @@ VulkanRHITextureView::VulkanRHITextureView(const RHITextureViewInfo& info, Vulka
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = ResourceCast(info.texture)->GetHandle();
     viewInfo.viewType = VulkanUtil::TextureViewTypeToVk(info.viewType);  
-    viewInfo.format = VulkanUtil::TextureFormatToVkFormat(info.format);                  
+    viewInfo.format = VulkanUtil::RHIFormatToVkFormat(info.format);                  
     viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;    
     viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
     viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -499,6 +509,12 @@ VulkanRHISampler::VulkanRHISampler(const RHISamplerInfo& info, VulkanRHIBackend&
     //     samplerInfo.anisotropyEnable = VK_FALSE;
     // }
 
+    //add a extension struct to enable Min mode
+    VkSamplerReductionModeCreateInfoEXT createInfoReduction = {};
+    createInfoReduction.sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO_EXT;
+    createInfoReduction.reductionMode = VulkanUtil::SamplerReductionModeToVk(info.reductionMode);
+    samplerInfo.pNext = &createInfoReduction;
+
     if (vkCreateSampler(backend.GetLogicalDevice(), &samplerInfo, nullptr, &handle) != VK_SUCCESS) 
     {
         LOG_FATAL("Failed to create texture sampler!");
@@ -515,6 +531,14 @@ void VulkanRHISampler::Destroy()
 VulkanRHIShader::VulkanRHIShader(const RHIShaderInfo& info, VulkanRHIBackend& backend)
 : RHIShader(info)
 {
+    // 从spv文件的字符串信息里收集定义的宏
+    std::regex pattern("#define (\\w+)");
+    for (std::cregex_iterator it((char*)info.code.data(), (char*)info.code.data() + info.code.size(), pattern); 
+            it != std::cregex_iterator{}; it++) 
+    {
+        reflectInfo.definedSymbols.insert((*it)[1].str());
+    }
+
     // 创建ShaderModule
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -547,15 +571,6 @@ VulkanRHIShader::VulkanRHIShader(const RHIShaderInfo& info, VulkanRHIBackend& ba
     // bool isGLSL = module.source_language & SpvSourceLanguageGLSL;
     // bool isHLSL = module.source_language & SpvSourceLanguageHLSL;
 
-    // 着色器输入
-    // uint32_t inputCnt;
-    // spvReflectEnumerateInputVariables(&module, &inputCnt, NULL);
-    // if (inputCnt > 0)
-    // {
-    //     std::vector<SpvReflectInterfaceVariable*> interfaceVariables(inputCnt);   
-    //     spvReflectEnumerateInputVariables(&module, &inputCnt, interfaceVariables.data()); 
-    // }
-
     // pushConstant
     // uint32_t pushConstantCnt;
     // spvReflectEnumeratePushConstantBlocks(&module, &pushConstantCnt, NULL);
@@ -565,12 +580,70 @@ VulkanRHIShader::VulkanRHIShader(const RHIShaderInfo& info, VulkanRHIBackend& ba
     //     spvReflectEnumeratePushConstantBlocks(&module, &pushConstantCnt, blockVariables.data());
     // }
 
+    // 着色器输入和输出
+    uint32_t inputVariableCnt;
+    spvReflectEnumerateInputVariables(&module, &inputVariableCnt, NULL);
+    if (inputVariableCnt > 0)
+    {
+        std::vector<SpvReflectInterfaceVariable*> inputVariables(inputVariableCnt);   
+        spvReflectEnumerateInputVariables(&module, &inputVariableCnt, inputVariables.data()); 
+
+        for(uint32_t i = 0; i < inputVariableCnt; i++)
+        {
+            if(inputVariables[i]->location < MAX_SHADER_IN_OUT_VARIABLES)
+                reflectInfo.inputVariables[inputVariables[i]->location] = VulkanUtil::SpvFormatToRHIFormat(inputVariables[i]->format);
+        }
+    }
+
+    uint32_t outputVariableCnt;
+    spvReflectEnumerateOutputVariables(&module, &outputVariableCnt, NULL);
+    if(outputVariableCnt > 0)
+    {
+        std::vector<SpvReflectInterfaceVariable*> outputVariables(outputVariableCnt);
+        spvReflectEnumerateOutputVariables(&module, &outputVariableCnt, outputVariables.data());
+
+        for(uint32_t i = 0; i < outputVariableCnt; i++)
+        {
+            if(outputVariables[i]->location < MAX_SHADER_IN_OUT_VARIABLES)
+                reflectInfo.outputVariables[outputVariables[i]->location] = VulkanUtil::SpvFormatToRHIFormat(outputVariables[i]->format);
+        }
+    }
+
+    // specialization constant
+    // uint32_t specializationConstantCnt;
+    // spvReflectEnumerateSpecializationConstants(&module, &specializationConstantCnt, NULL);
+    // if(specializationConstantCnt > 0)
+    // {
+    //     std::vector<SpvReflectSpecializationConstant*> specializationConstants(specializationConstantCnt);
+    //     spvReflectEnumerateSpecializationConstants(&module, &specializationConstantCnt, specializationConstants.data());
+
+    //     for(uint32_t i = 0; i < specializationConstantCnt; i++)
+    //     {
+    //         specializationConstants[i];
+    //     }       
+    // }
+
+    // interface variable
+    // uint32_t interfaceVariableCnt;
+    // spvReflectEnumerateInterfaceVariables(&module, &interfaceVariableCnt, NULL);
+    // if(interfaceVariableCnt > 0)
+    // {
+    //     std::vector<SpvReflectInterfaceVariable*> interfaceVariables(interfaceVariableCnt);
+    //     spvReflectEnumerateInterfaceVariables(&module, &interfaceVariableCnt, interfaceVariables.data());
+
+    //     for(uint32_t i = 0; i < interfaceVariableCnt; i++)
+    //     {
+    //         interfaceVariables[i];
+    //     }       
+    // }
+
+
     // 描述符
     uint32_t descriptorSetCnt;
     spvReflectEnumerateDescriptorSets(&module, &descriptorSetCnt, NULL);
     if (descriptorSetCnt > 0)
     {
-        std::vector<SpvReflectDescriptorSet*> descriptorSets(descriptorSetCnt + 1);
+        std::vector<SpvReflectDescriptorSet*> descriptorSets(descriptorSetCnt);
         spvReflectEnumerateDescriptorSets(&module, &descriptorSetCnt, descriptorSets.data());
         
         uint32_t descriptorSize = 0;
@@ -740,6 +813,7 @@ RHIDescriptorSet& VulkanRHIDescriptorSet::UpdateDescriptor(const RHIDescriptorUp
         
     case RESOURCE_TYPE_TEXTURE:
 	case RESOURCE_TYPE_RW_TEXTURE:
+    case RESOURCE_TYPE_TEXTURE_CUBE:
         imageDescriptor.imageView = ResourceCast(descriptorUpdateInfo.textureView)->GetHandle();
         imageDescriptor.imageLayout = VulkanUtil::ResourceTypeToImageLayout(descriptorUpdateInfo.resourceType);
         descriptorWrite.pImageInfo = &imageDescriptor;
@@ -791,7 +865,7 @@ VulkanRHIRenderPass::VulkanRHIRenderPass(const RHIRenderPassInfo& info, VulkanRH
         if(info.colorAttachments[i].textureView == nullptr) break;  // attachment不允许中间有间隔的空元素，检查到有空就停止
         
         renderPassAttachments.colorAttachments.push_back({
-            .format = VulkanUtil::TextureFormatToVkFormat(info.colorAttachments[i].textureView->GetInfo().format),
+            .format = VulkanUtil::RHIFormatToVkFormat(info.colorAttachments[i].textureView->GetInfo().format),
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VulkanUtil::AttachmentLoadOpToVk(info.colorAttachments[i].loadOp),
             .storeOp = VulkanUtil::AttachmentStoreOpToVk(info.colorAttachments[i].storeOp),
@@ -801,7 +875,7 @@ VulkanRHIRenderPass::VulkanRHIRenderPass(const RHIRenderPassInfo& info, VulkanRH
     if(info.depthStencilAttachment.textureView != nullptr)
     {
         renderPassAttachments.depthStencilAttachment = {
-            .format = VulkanUtil::TextureFormatToVkFormat(info.depthStencilAttachment.textureView->GetInfo().format),
+            .format = VulkanUtil::RHIFormatToVkFormat(info.depthStencilAttachment.textureView->GetInfo().format),
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VulkanUtil::AttachmentLoadOpToVk(info.depthStencilAttachment.loadOp),
             .storeOp = VulkanUtil::AttachmentStoreOpToVk(info.depthStencilAttachment.storeOp),
@@ -862,14 +936,14 @@ VulkanRHIGraphicsPipeline::VulkanRHIGraphicsPipeline(const RHIGraphicsPipelineIn
         attachmentSize++;
         
         renderPassAttachments.colorAttachments.push_back({
-            .format = VulkanUtil::TextureFormatToVkFormat(info.colorAttachmentFormats[i]),
+            .format = VulkanUtil::RHIFormatToVkFormat(info.colorAttachmentFormats[i]),
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
         });
     }
     renderPassAttachments.depthStencilAttachment = {
-        .format = VulkanUtil::TextureFormatToVkFormat(info.depthStencilAttachmentFormat),
+        .format = VulkanUtil::RHIFormatToVkFormat(info.depthStencilAttachmentFormat),
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -945,7 +1019,7 @@ VkPipelineVertexInputStateCreateInfo VulkanRHIGraphicsPipeline::GetInputStateCre
         VkVertexInputAttributeDescription attributeDescription = {};
         attributeDescription.binding = binding;
         attributeDescription.location = vertexElement.attributeIndex;                                       // 对应layout location
-        attributeDescription.format = VulkanUtil::TextureFormatToVkFormat(vertexElement.format);   // 属性格式
+        attributeDescription.format = VulkanUtil::RHIFormatToVkFormat(vertexElement.format);   // 属性格式
         attributeDescription.offset = vertexElement.offset;                                                 // 字段偏移
         attributeDescriptions.push_back(attributeDescription);
         
@@ -1012,13 +1086,14 @@ VkPipelineRasterizationStateCreateInfo VulkanRHIGraphicsPipeline::GetPipelineRas
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.depthClampEnable = rasterizerState.depthClipMode == DEPTH_CLAMP ? VK_TRUE : VK_FALSE;            //对于超过远近裁剪平面的处理
     rasterizer.rasterizerDiscardEnable = VK_FALSE;                                                              //禁止图元传输
-    rasterizer.polygonMode = VulkanUtil::FillModeToVk(rasterizerState.fillMode);                        //多边形的填充模式  
+    rasterizer.polygonMode = VulkanUtil::FillModeToVk(rasterizerState.fillMode);                       //多边形的填充模式  
     rasterizer.lineWidth = 1.0f;                                                                                //填充模式为线框时的线宽度  
-    rasterizer.cullMode = VulkanUtil::CullModeToVk(rasterizerState.cullMode);                           //裁剪模式
+    rasterizer.cullMode = VulkanUtil::CullModeToVk(rasterizerState.cullMode);                          //裁剪模式
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;                                                     //面手性
 
-    rasterizer.depthBiasEnable = (  rasterizerState.depthBias > 0.0f || 
-                                    rasterizerState.slopeScaleDepthBias > 0.0f) ? VK_TRUE : VK_FALSE;          //深度缓冲的bias
+    // rasterizer.depthBiasEnable = (  rasterizerState.depthBias > 0.0f || 
+    //                                 rasterizerState.slopeScaleDepthBias > 0.0f) ? VK_TRUE : VK_FALSE;        //深度缓冲的bias
+    rasterizer.depthBiasEnable = VK_TRUE;                                                                       //动态设置
     rasterizer.depthBiasConstantFactor = rasterizerState.depthBias; 
     rasterizer.depthBiasClamp = 0.0f; 
     rasterizer.depthBiasSlopeFactor = rasterizerState.slopeScaleDepthBias; 
@@ -1116,7 +1191,7 @@ void VulkanRHIGraphicsPipeline::GetDynamicInputStateCreateInfo(const VertexInput
         dynamicAttributeDescription.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
         dynamicAttributeDescription.binding = binding;
         dynamicAttributeDescription.location = vertexElement.attributeIndex;                                       
-        dynamicAttributeDescription.format = VulkanUtil::TextureFormatToVkFormat(vertexElement.format);   
+        dynamicAttributeDescription.format = VulkanUtil::RHIFormatToVkFormat(vertexElement.format);   
         dynamicAttributeDescription.offset = vertexElement.offset;                                                 
         dynamicAttributeDescriptions.push_back(dynamicAttributeDescription);
         

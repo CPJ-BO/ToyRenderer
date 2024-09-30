@@ -26,13 +26,13 @@ public:
 	Mat4 GetModelMat()									{ return model; }
 	Mat4 GetModelMatInv()								{ return model.inverse(); }
 
+	virtual std::string GetTypeName() override			{ return "Transform Component"; }
 	virtual ComponentType GetType()	override final		{ return TRANSFORM_COMPONENT; }
 
 private:
     Transform transform;
 
 	Mat4 model;
-
 
 	void UpdateMatrix();
 
@@ -41,4 +41,6 @@ private:
     SerailizeBaseClass(Component)
     SerailizeEntry(transform)
     EndSerailize
+
+	EnableComponentEditourUI()
 };

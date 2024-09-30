@@ -4,15 +4,17 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
-#define MAX_QUEUE_CNT 2			//每个队列族的最大队列数目
-#define MAX_RENDER_TARGETS 8	//允许同时绑定的最大RT数目
-#define MAX_DESCRIPTOR_SETS 8	//允许绑定的最大描述符集数目
+#define MAX_QUEUE_CNT 2					//每个队列族的最大队列数目
+#define MAX_RENDER_TARGETS 8			//允许同时绑定的最大RT数目
+#define MAX_SHADER_IN_OUT_VARIABLES 8	//允许着色器最大的输入和输出变量数目
+#define MAX_DESCRIPTOR_SETS 8			//允许绑定的最大描述符集数目
 
+typedef std::shared_ptr<class RHICommandContextImmediate> RHICommandContextImmediateRef;
 typedef std::shared_ptr<class RHICommandContext> RHICommandContextRef;
 typedef std::shared_ptr<class RHIBackend> RHIBackendRef;
-typedef std::shared_ptr<class RHIImmediateCommand> RHIImmediateCommandRef;
 typedef std::shared_ptr<class RHIResource> RHIResourceRef;
 typedef std::shared_ptr<class RHIBuffer> RHIBufferRef;
 typedef std::shared_ptr<class RHITexture> RHITextureRef;
@@ -32,7 +34,7 @@ typedef std::shared_ptr<class RHICommandPool> RHICommandPoolRef;
 typedef std::shared_ptr<class RHIFence> RHIFenceRef;
 typedef std::shared_ptr<class RHISemaphore> RHISemaphoreRef;
 
-enum RHIResourceType	// 此处的倒序也是有效的析构顺序
+enum RHIResourceType : uint32_t	// 此处的倒序也是有效的析构顺序
 {
 	RHI_BUFFER = 0,
 	RHI_TEXTURE,
@@ -53,14 +55,14 @@ enum RHIResourceType	// 此处的倒序也是有效的析构顺序
 	RHI_SWAPCHAIN,
 	RHI_COMMAND_POOL,
 	RHI_COMMAND_CONTEXT,
-	RHI_IMMEDIATE_COMMAND,
+	RHI_COMMAND_CONTEXT_IMMEDIATE,
 	RHI_FENCE,
 	RHI_SEMAPHORE,
 
 	RHI_RESOURCE_TYPE_MAX_CNT,	//
 };
 
-enum QueueType
+enum QueueType : uint32_t
 {
 	QUEUE_TYPE_GRAPHICS = 0,
 	QUEUE_TYPE_COMPUTE,
@@ -69,7 +71,7 @@ enum QueueType
 	QUEUE_TYPE_MAX_ENUM,	//
 };
 
-enum MemoryUsage
+enum MemoryUsage : uint32_t
 {
     MEMORY_USAGE_UNKNOWN = 0,
     MEMORY_USAGE_GPU_ONLY = 1,		// 仅GPU使用，在VRAM显存上分配，不可绑定
@@ -80,7 +82,7 @@ enum MemoryUsage
     MEMORY_USAGE_MAX_ENUM = 0x7FFFFFFF,		//
 };
 
-enum ResourceTypeBits	//资源类型，封装了UsageFlag和DescriptorType，在底层实现做推断
+enum ResourceTypeBits : uint32_t	//资源类型，封装了UsageFlag和DescriptorType，在底层实现做推断
 {
     RESOURCE_TYPE_NONE = 0x00000000,
     RESOURCE_TYPE_SAMPLER = 0x00000001,
@@ -103,7 +105,7 @@ enum ResourceTypeBits	//资源类型，封装了UsageFlag和DescriptorType，在
 };
 typedef uint32_t ResourceType;
 
-enum BufferCreationFlagBits
+enum BufferCreationFlagBits : uint32_t
 {
 	BUFFER_CREATION_NONE = 0x00000000,
 	BUFFER_CREATION_PERSISTENT_MAP = 0x00000001,
@@ -112,7 +114,7 @@ enum BufferCreationFlagBits
 };
 typedef uint32_t BufferCreationFlags;
 
-enum TextureCreationFlagBits
+enum TextureCreationFlagBits : uint32_t
 {
 	TEXTURE_CREATION_NONE = 0x00000000,
 	TEXTURE_CREATION_FORCE_2D = 0x00000001,
@@ -122,7 +124,7 @@ enum TextureCreationFlagBits
 };
 typedef uint32_t TextureCreationFlags;
 
-enum RHIResourceState	//根据状态来设置对应的barrier做转换以及同步，buffer也有		
+enum RHIResourceState : uint32_t	//根据状态来设置对应的barrier做转换以及同步，buffer也有		
 {
     RESOURCE_STATE_UNDEFINED = 0,
 	RESOURCE_STATE_COMMON,
@@ -141,7 +143,7 @@ enum RHIResourceState	//根据状态来设置对应的barrier做转换以及同�
     RESOURCE_STATE_MAX_ENUM,	//
 };
 
-enum TextureFormat 
+enum RHIFormat : uint32_t
 {
 	FORMAT_UKNOWN = 0,
 
@@ -168,6 +170,15 @@ enum TextureFormat
 	FORMAT_R16G16_UNORM,
 	FORMAT_R16G16B16_UNORM,
 	FORMAT_R16G16B16A16_UNORM,
+
+	FORMAT_R8_SNORM,
+	FORMAT_R8G8_SNORM,
+	FORMAT_R8G8B8_SNORM,
+	FORMAT_R8G8B8A8_SNORM,
+	FORMAT_R16_SNORM,
+	FORMAT_R16G16_SNORM,
+	FORMAT_R16G16B16_SNORM,
+	FORMAT_R16G16B16A16_SNORM,
 
 	FORMAT_R8_UINT,
 	FORMAT_R8G8_UINT,
@@ -202,7 +213,90 @@ enum TextureFormat
 	FORMAT_MAX_ENUM, 	//
 };
 
-static bool IsDepthStencilFormat(TextureFormat format)
+static uint32_t FormatChanelCounts(RHIFormat format)
+{
+	switch (format) {
+	case FORMAT_R8_SRGB:
+	case FORMAT_R16_SFLOAT:
+	case FORMAT_R32_SFLOAT:
+	case FORMAT_R8_UNORM:
+	case FORMAT_R16_UNORM:
+	case FORMAT_R8_SNORM:
+	case FORMAT_R16_SNORM:
+	case FORMAT_R8_UINT:
+	case FORMAT_R16_UINT:
+	case FORMAT_R32_UINT:
+	case FORMAT_R8_SINT:
+	case FORMAT_R16_SINT:
+	case FORMAT_R32_SINT:
+	case FORMAT_D32_SFLOAT:
+		return 1;
+
+	case FORMAT_R8G8_SRGB:
+	case FORMAT_R16G16_SFLOAT:
+	case FORMAT_R32G32_SFLOAT:
+	case FORMAT_R8G8_UNORM:
+	case FORMAT_R16G16_UNORM:
+	case FORMAT_R8G8_SNORM: 
+	case FORMAT_R16G16_SNORM:
+	case FORMAT_R8G8_UINT:
+	case FORMAT_R16G16_UINT:
+	case FORMAT_R32G32_UINT:
+	case FORMAT_R8G8_SINT:
+	case FORMAT_R16G16_SINT:
+	case FORMAT_R32G32_SINT:
+	case FORMAT_D32_SFLOAT_S8_UINT:
+	case FORMAT_D24_UNORM_S8_UINT:
+		return 2;
+
+	case FORMAT_R8G8B8_SRGB:
+	case FORMAT_R16G16B16_SFLOAT:
+	case FORMAT_R32G32B32_SFLOAT:
+	case FORMAT_R8G8B8_UNORM:
+	case FORMAT_R16G16B16_UNORM:
+	case FORMAT_R8G8B8_SNORM:
+	case FORMAT_R16G16B16_SNORM:
+	case FORMAT_R8G8B8_UINT:
+	case FORMAT_R16G16B16_UINT:
+	case FORMAT_R32G32B32_UINT:
+	case FORMAT_R8G8B8_SINT:
+	case FORMAT_R16G16B16_SINT:
+	case FORMAT_R32G32B32_SINT:
+		return 3;
+
+	case FORMAT_R8G8B8A8_SRGB:
+	case FORMAT_B8G8R8A8_SRGB:
+	case FORMAT_R16G16B16A16_SFLOAT:     
+	case FORMAT_R32G32B32A32_SFLOAT:     
+	case FORMAT_R8G8B8A8_UNORM:  
+	case FORMAT_R16G16B16A16_UNORM:  
+	case FORMAT_R8G8B8A8_SNORM:  
+	case FORMAT_R16G16B16A16_SNORM:  
+	case FORMAT_R8G8B8A8_UINT:    
+	case FORMAT_R16G16B16A16_UINT:
+	case FORMAT_R32G32B32A32_UINT:
+	case FORMAT_R8G8B8A8_SINT:   
+	case FORMAT_R16G16B16A16_SINT:
+	case FORMAT_R32G32B32A32_SINT:
+		return 4;
+
+	default:  
+		return 0;
+    }
+}
+
+static bool IsDepthStencilFormat(RHIFormat format)
+{
+	switch (format) {
+	case FORMAT_D32_SFLOAT_S8_UINT:
+	case FORMAT_D24_UNORM_S8_UINT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool IsDepthFormat(RHIFormat format)
 {
 	switch (format) {
 	case FORMAT_D32_SFLOAT:
@@ -214,7 +308,7 @@ static bool IsDepthStencilFormat(TextureFormat format)
 	}
 }
 
-static bool IsStencilFormat(TextureFormat format)
+static bool IsStencilFormat(RHIFormat format)
 {
 	switch (format) {
 	case FORMAT_D32_SFLOAT_S8_UINT:
@@ -225,7 +319,29 @@ static bool IsStencilFormat(TextureFormat format)
 	}
 }
 
-enum FilterType 
+static bool IsColorFormat(RHIFormat format)
+{
+	return !IsDepthFormat(format) && !IsStencilFormat(format);
+}
+
+static bool IsRWFormat(RHIFormat format)
+{
+	switch (format) {
+	case FORMAT_D32_SFLOAT:
+	case FORMAT_D32_SFLOAT_S8_UINT:
+	case FORMAT_D24_UNORM_S8_UINT:
+	case FORMAT_R8_SRGB:
+	case FORMAT_R8G8_SRGB:
+	case FORMAT_R8G8B8_SRGB:
+	case FORMAT_R8G8B8A8_SRGB:
+	case FORMAT_B8G8R8A8_SRGB:
+		return false;
+	default:
+		return true;
+	}
+}
+
+enum FilterType  : uint32_t
 {
     FILTER_TYPE_NEAREST = 0,
     FILTER_TYPE_LINEAR,
@@ -233,7 +349,7 @@ enum FilterType
     FILTER_TYPE_MAX_ENUM,	//
 };
 
-enum MipMapMode
+enum MipMapMode : uint32_t
 {
     MIPMAP_MODE_NEAREST = 0,
     MIPMAP_MODE_LINEAR,
@@ -241,7 +357,7 @@ enum MipMapMode
     MIPMAP_MODE_MAX_ENUM_BIT,	//
 };
 
-enum AddressMode
+enum AddressMode : uint32_t
 {
     ADDRESS_MODE_MIRROR,
     ADDRESS_MODE_REPEAT,
@@ -251,7 +367,7 @@ enum AddressMode
     ADDRESS_MODE_MAX_ENUM,	//
 };
 
-enum TextureViewType
+enum TextureViewType : uint32_t
 {
 	VIEW_TYPE_UNDEFINED = 0,
 	VIEW_TYPE_1D,
@@ -265,7 +381,7 @@ enum TextureViewType
     VIEW_TYPE_MAX_ENUM,		//	
 };
 
-enum TextureAspectFlagBits
+enum TextureAspectFlagBits : uint32_t
 {
 	TEXTURE_ASPECT_NONE = 0x00000000,
 	TEXTURE_ASPECT_COLOR = 0x00000001,
@@ -274,11 +390,11 @@ enum TextureAspectFlagBits
 
 	TEXTURE_ASPECT_DEPTH_STENCIL = TEXTURE_ASPECT_DEPTH | TEXTURE_ASPECT_STENCIL,
 
-	TEXTURE_ASPECT_MAX_ENUM,	//
+	TEXTURE_ASPECT_MAX_ENUM = 0x7FFFFFFF,	//
 };
 typedef uint32_t TextureAspectFlags;
 
-enum ShaderFrequencyBits
+enum ShaderFrequencyBits : uint32_t
 {
 	SHADER_FREQUENCY_COMPUTE = 0x00000001,
 	SHADER_FREQUENCY_VERTEX = 0x00000002,
@@ -308,7 +424,7 @@ enum ShaderFrequencyBits
 };
 typedef uint32_t ShaderFrequency;
 
-enum AttachmentLoadOp 
+enum AttachmentLoadOp : uint32_t
 {
     ATTACHMENT_LOAD_OP_LOAD = 0,
     ATTACHMENT_LOAD_OP_CLEAR,
@@ -317,7 +433,7 @@ enum AttachmentLoadOp
     ATTACHMENT_LOAD_OP_MAX_ENUM,	//
 };
 
-enum AttachmentStoreOp 
+enum AttachmentStoreOp : uint32_t
 {
     ATTACHMENT_STORE_OP_STORE = 0,
     ATTACHMENT_STORE_OP_DONT_CARE = 1,
@@ -325,7 +441,7 @@ enum AttachmentStoreOp
     ATTACHMENT_STORE_OP_MAX_ENUM, 	//
 } ;
 
-enum PrimitiveType
+enum PrimitiveType : uint32_t
 {
 	PRIMITIVE_TYPE_TRIANGLE_LIST = 0,
 	PRIMITIVE_TYPE_TRIANGLE_STRIP,
@@ -335,7 +451,7 @@ enum PrimitiveType
 	PRIMITIVE_TYPE_MAX_ENUM,	//
 };
 
-enum RasterizerFillMode
+enum RasterizerFillMode : uint32_t
 {
 	FILL_MODE_POINT = 0,
 	FILL_MODE_WIREFRAME,
@@ -344,7 +460,7 @@ enum RasterizerFillMode
     FILL_MODE_MAX_ENUM,  //
 };
 
-enum RasterizerCullMode
+enum RasterizerCullMode : uint32_t
 {
 	CULL_MODE_NONE = 0,
 	CULL_MODE_FRONT,     
@@ -353,7 +469,7 @@ enum RasterizerCullMode
     CULL_MODE_MAX_ENUM,  //
 };
 
-enum RasterizerDepthClipMode
+enum RasterizerDepthClipMode : uint32_t
 {
 	DEPTH_CLIP = 0,
 	DEPTH_CLAMP,
@@ -361,7 +477,7 @@ enum RasterizerDepthClipMode
 	DEPTH_CLIP_MODE_MAX_ENUM,    //
 };
 
-enum CompareFunction
+enum CompareFunction : uint32_t
 {
 	COMPARE_FUNCTION_LESS = 0,
 	COMPARE_FUNCTION_LESS_EQUAL,
@@ -375,7 +491,16 @@ enum CompareFunction
 	COMPARE_FUNCTION_MAX_ENUM,   //
 };
 
-enum StencilOp
+enum SamplerReductionMode : uint32_t
+{
+	SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE = 0,
+	SAMPLER_REDUCTION_MODE_MIN,
+	SAMPLER_REDUCTION_MODE_MAX,
+
+	SAMPLER_REDUCTION_MODE_MAX_ENUM,   //
+};
+
+enum StencilOp : uint32_t
 {
     STENCIL_OP_KEEP = 0,
     STENCIL_OP_ZERO,
@@ -389,7 +514,7 @@ enum StencilOp
     STENCIL_OP_MAX_ENUM, //
 };
 
-enum BlendOp
+enum BlendOp : uint32_t
 {
 	BLEND_OP_ADD = 0,
     BLEND_OP_SUBTRACT,
@@ -400,7 +525,7 @@ enum BlendOp
     BLEND_OP_MAX_ENUM, //
 };
 
-enum BlendFactor
+enum BlendFactor : uint32_t
 {
     BLEND_FACTOR_ZERO = 0,
     BLEND_FACTOR_ONE,
@@ -419,7 +544,7 @@ enum BlendFactor
     BLEND_FACTOR_MAX_ENUM, //
 };
 
-enum ColorWriteMaskBits
+enum ColorWriteMaskBits : uint32_t
 {
 	COLOR_MASK_RED   = 0x01,
 	COLOR_MASK_GREEN = 0x02,
@@ -481,8 +606,8 @@ typedef struct Extent3D
 
 typedef struct Offset2D 
 {
-    int32_t    x;
-    int32_t    y;
+    uint32_t    x;
+    uint32_t    y;
 
 	friend bool operator==(const Offset2D& a, const Offset2D& b)
 	{
@@ -494,9 +619,9 @@ typedef struct Offset2D
 
 typedef struct Offset3D 
 {
-    int32_t    x;
-    int32_t    y;
-    int32_t    z;
+    uint32_t    x;
+    uint32_t    y;
+    uint32_t    z;
 
 	friend bool operator==(const Offset3D& a, const Offset3D& b)
 	{
@@ -535,6 +660,8 @@ typedef struct TextureSubresourceRange
     uint32_t              baseArrayLayer = 0;
     uint32_t              layerCount = 0;
 
+	uint32_t			  __padding = 0;	
+
 	friend bool operator==(const TextureSubresourceRange& a, const TextureSubresourceRange& b)
 	{
 		return 	a.aspect == b.aspect &&
@@ -542,6 +669,15 @@ typedef struct TextureSubresourceRange
 				a.levelCount == b.levelCount &&
 				a.baseArrayLayer == b.baseArrayLayer &&
 				a.layerCount == b.layerCount;
+	}
+
+	bool IsDefault() 
+	{
+		return 	aspect == TEXTURE_ASPECT_NONE &&
+				baseMipLevel == 0 &&
+				levelCount == 0 &&
+				baseArrayLayer == 0 &&
+				layerCount == 0;
 	}
 
 } TextureSubresourceRange;
@@ -561,6 +697,14 @@ typedef struct TextureSubresourceLayers
 				a.layerCount == b.layerCount;
 	}
 
+	bool IsDefault() 
+	{
+		return 	aspect == TEXTURE_ASPECT_NONE &&
+				mipLevel == 0 &&
+				baseArrayLayer == 0 &&
+				layerCount == 0;
+	}
+
 } TextureSubresourceLayers;
 
 typedef struct RHIQueueInfo
@@ -577,7 +721,7 @@ typedef struct RHISwapchainInfo
 
 	uint32_t imageCount;
 	Extent2D extent;
-	TextureFormat format;
+	RHIFormat format;
 
 } RHISwapchainInfo;
 
@@ -600,7 +744,7 @@ typedef struct RHIBufferInfo
 
 typedef struct RHITextureInfo 
 {
-	TextureFormat format;
+	RHIFormat format;
 	Extent3D extent;
 	uint32_t arrayLayers = 1;
 	uint32_t mipLevels = 1;
@@ -610,15 +754,34 @@ typedef struct RHITextureInfo
 
 	TextureCreationFlags creationFlag = TEXTURE_CREATION_NONE;
 
+	friend bool operator== (const RHITextureInfo& a, const RHITextureInfo& b)
+	{
+		return  a.format == b.format &&
+				a.extent == b.extent &&
+				a.arrayLayers == b.arrayLayers &&
+				a.mipLevels == b.mipLevels &&
+				a.memoryUsage == b.memoryUsage &&
+				a.type == b.type &&
+				a.creationFlag == b.creationFlag;
+	}
+
 } RHITextureInfo;
 
 typedef struct RHITextureViewInfo 
 {
     RHITextureRef texture;
-    TextureFormat format = FORMAT_UKNOWN;			// 此时取texture的format
+    RHIFormat format = FORMAT_UKNOWN;			// 此时取texture的format
 	TextureViewType viewType = VIEW_TYPE_2D;
 
     TextureSubresourceRange subresource = {};	// 此时取texture的默认range
+
+	friend bool operator== (const RHITextureViewInfo& a, const RHITextureViewInfo& b)
+	{
+		return  a.texture.get() == b.texture.get() &&
+				a.format == b.format &&
+				a.viewType == b.viewType &&
+				a.subresource == b.subresource;
+	}
 
 } RHITextureViewInfo;
 
@@ -631,6 +794,7 @@ typedef struct RHISamplerInfo
     AddressMode addressModeV = ADDRESS_MODE_REPEAT;
     AddressMode addressModeW = ADDRESS_MODE_REPEAT;
     CompareFunction compareFunction = COMPARE_FUNCTION_NEVER;
+	SamplerReductionMode reductionMode = SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE;
 
 	float mipLodBias = 0.0f;
     float maxAnisotropy = 0.0f;
@@ -675,9 +839,14 @@ typedef struct ShaderReflectInfo
 
     ShaderFrequency frequency;
     std::vector<ShaderResourceEntry> resources;
+	std::unordered_set<std::string> definedSymbols;
+	std::array<RHIFormat, MAX_SHADER_IN_OUT_VARIABLES> inputVariables = {};
+	std::array<RHIFormat, MAX_SHADER_IN_OUT_VARIABLES> outputVariables = {};
     uint32_t localSizeX = 0;
     uint32_t localSizeY = 0;
     uint32_t localSizeZ = 0;
+
+	bool DefinedSymbol(std::string symbol) const { return definedSymbols.find(symbol) != definedSymbols.end(); }
 
 } ShaderReflectInfo;
 
@@ -767,9 +936,11 @@ typedef struct RHIRasterizerStateInfo
 
 typedef struct RHIDepthStencilStateInfo
 {
+	CompareFunction depthTest = COMPARE_FUNCTION_LESS_EQUAL;
 	bool enableDepthTest = true;
 	bool enableDepthWrite = true;
-	CompareFunction depthTest = COMPARE_FUNCTION_LESS_EQUAL;
+
+	bool __padding[2] = { 0 };
 
 	// bool enableFrontFaceStencil = false;
 	// CompareFunction frontFaceStencilTest = COMPARE_FUNCTION_ALWAYS;
@@ -788,8 +959,9 @@ typedef struct RHIDepthStencilStateInfo
 	
 	friend bool operator== (const RHIDepthStencilStateInfo& a, const RHIDepthStencilStateInfo& b)
 	{	
-		return 	a.enableDepthWrite == b.enableDepthWrite &&
-				a.depthTest == b.depthTest;
+		return 	a.depthTest == b.depthTest &&
+				a.enableDepthTest == b.enableDepthTest &&
+				a.enableDepthWrite == b.enableDepthWrite;
 				// a.enableFrontFaceStencil 		== b.enableFrontFaceStencil &&
 				// a.frontFaceStencilTest 			== b.frontFaceStencilTest &&
 				// a.frontFaceStencilFailStencilOp == b.frontFaceStencilFailStencilOp &&
@@ -810,8 +982,6 @@ typedef struct RHIBlendStateInfo
 {
 	struct RenderTarget
 	{
-		bool enable = false;
-
 		BlendOp colorBlendOp = BLEND_OP_ADD;
 		BlendFactor colorSrcBlend = BLEND_FACTOR_ONE;
 		BlendFactor colorDstBlend = BLEND_FACTOR_ZERO;
@@ -821,46 +991,43 @@ typedef struct RHIBlendStateInfo
 		BlendFactor alphaDstBlend = BLEND_FACTOR_ZERO;
 
 		ColorWriteMasks colorWriteMask = COLOR_MASK_RGBA;
+
+		bool enable = false;
+
+		bool __padding[3] = { 0 };
+
+		friend bool operator== (const RenderTarget& a, const RenderTarget& b)
+		{
+			return  a.colorBlendOp 		== b.colorBlendOp &&
+					a.colorSrcBlend 	== b.colorSrcBlend &&
+					a.colorDstBlend 	== b.colorDstBlend &&				
+					a.alphaBlendOp 		== b.alphaBlendOp &&
+					a.alphaSrcBlend 	== b.alphaSrcBlend &&
+					a.alphaDstBlend 	== b.alphaDstBlend &&
+					a.colorWriteMask 	== b.colorWriteMask &&
+					a.enable 			== b.enable;
+		}
 	};
 
 	std::array<RenderTarget, MAX_RENDER_TARGETS> renderTargets;
 	
-	friend bool operator== (const RHIBlendStateInfo::RenderTarget& a, const RHIBlendStateInfo::RenderTarget& b)
-	{
-		return 	a.enable 			== b.enable &&
-				a.colorBlendOp 		== b.colorBlendOp &&
-				a.colorSrcBlend 	== b.colorSrcBlend &&
-				a.colorDstBlend 	== b.colorDstBlend &&				
-				a.alphaBlendOp 		== b.alphaBlendOp &&
-				a.alphaSrcBlend 	== b.alphaSrcBlend &&
-				a.alphaDstBlend 	== b.alphaDstBlend &&
-				a.colorWriteMask 	== b.colorWriteMask;
-	}
-
 	friend bool operator== (const RHIBlendStateInfo& a, const RHIBlendStateInfo& b)
 	{
-		// if(a.renderTargets.size() != b.renderTargets.size()) return false;
-
-		for(int32_t i = 0; i < a.renderTargets.size(); i++)
-		{
-			if (!(a.renderTargets[i] == b.renderTargets[i])) return false;
-		}
-		return true;
+		return a.renderTargets == b.renderTargets;
 	}
 
 } RHIBlendStateInfo;
 
 typedef struct VertexElement
 {
-public:
-
-	uint8_t streamIndex = 0;
-	uint8_t attributeIndex = 0;
-	TextureFormat format = FORMAT_UKNOWN;
-
-	uint8_t offset = 0;
-	uint16_t stride = 0;
+	uint32_t streamIndex = 0;
+	uint32_t attributeIndex = 0;
+	RHIFormat format = FORMAT_UKNOWN;
+	uint32_t offset = 0;
+	uint32_t stride = 0;
 	bool useInstanceIndex = false;
+
+	bool __padding[3] = { 0 };
 
 	friend bool operator== (const VertexElement& a, const VertexElement& b) 
 	{
@@ -877,12 +1044,21 @@ public:
 typedef struct VertexInputStateInfo
 {
 	std::vector<VertexElement> vertexElements;
+
+	friend bool operator== (const VertexInputStateInfo& a, const VertexInputStateInfo& b)
+	{
+		if(a.vertexElements.size() != b.vertexElements.size()) return false;
+		for(uint32_t i = 0; i < a.vertexElements.size(); i++)
+		{
+			if(!(a.vertexElements[i] == b.vertexElements[i])) return false;
+		}
+		return true;
+	}
+
 } VertexInputStateInfo;
 
 typedef struct RHIGraphicsPipelineInfo
 {
-	RHIGraphicsPipelineInfo() = default;
-
 	RHIShaderRef					vertexShader;
 	RHIShaderRef					geometryShader;
 	RHIShaderRef	 				fragmentShader;
@@ -895,11 +1071,26 @@ typedef struct RHIGraphicsPipelineInfo
 	RHIBlendStateInfo				blendState = {};
 	RHIDepthStencilStateInfo		depthStencilState = {};
 
-	std::array<TextureFormat, MAX_RENDER_TARGETS> colorAttachmentFormats = { FORMAT_UKNOWN };
-	TextureFormat						depthStencilAttachmentFormat = FORMAT_UKNOWN;
+	std::array<RHIFormat, MAX_RENDER_TARGETS> colorAttachmentFormats = { FORMAT_UKNOWN };
+	RHIFormat						depthStencilAttachmentFormat = FORMAT_UKNOWN;
+
+	uint32_t 						__padding = FORMAT_UKNOWN;
 
 	// uint32_t						numSamples = 1;		// TODO
 	// uint8_t						subpassIndex = 0;	// 放弃支持sub pass
+
+	friend bool operator== (const RHIGraphicsPipelineInfo& a, const RHIGraphicsPipelineInfo& b)
+	{
+		return  a.vertexShader.get() == b.vertexShader.get() &&
+				a.geometryShader.get() == b.geometryShader.get() &&
+				a.fragmentShader.get() == b.fragmentShader.get() &&
+				a.rootSignature.get() == b.rootSignature.get() &&
+				a.vertexInputState == b.vertexInputState &&
+				a.primitiveType == b.primitiveType &&
+				a.rasterizerState == b.rasterizerState &&
+				a.blendState == b.blendState &&
+				a.depthStencilState == b.depthStencilState;
+	}
 
 } RHIGraphicsPipelineInfo;
 
@@ -908,6 +1099,12 @@ typedef struct RHIComputePipelineInfo
 	RHIShaderRef 					computeShader;
 
 	RHIRootSignatureRef				rootSignature;
+
+	friend bool operator== (const RHIComputePipelineInfo& a, const RHIComputePipelineInfo& b)
+	{
+		return  a.computeShader.get() == b.computeShader.get() &&
+				a.rootSignature.get() == b.rootSignature.get();
+	}
 
 } RHIComputePipelineInfo;
 
